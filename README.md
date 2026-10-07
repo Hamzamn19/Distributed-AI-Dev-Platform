@@ -21,5 +21,8 @@ Scrum, 5 sprints of 2 weeks. Planning board: Trello (link: TODO). Every change g
 ## Getting started
 TODO: filled in by card S1-06 (clone, install, run, test).
 
+For the first local Database Agent prototype, see
+[`agents/database_agent/README.md`](agents/database_agent/README.md).
+
 ## Status
 Sprint 1 (Oct 5 - Oct 18, tentative): foundation and first end-to-end slice.
