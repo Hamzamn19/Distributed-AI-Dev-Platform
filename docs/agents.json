@@ -4,7 +4,7 @@
     "name": "Fatma-PC",
     "owner": "Fatma",
     "role_hint": "frontend",
-    "model": "to-be-decided",
+    "model": "qwen3:4b",
     "provider": "ollama",
     "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
   },
@@ -13,7 +13,7 @@
     "name": "Eray-PC",
     "owner": "Eray",
     "role_hint": "backend",
-    "model": "to-be-decided",
+    "model": "qwen3:4b",
     "provider": "ollama",
     "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
   },
@@ -22,7 +22,7 @@
     "name": "Can-PC",
     "owner": "Can",
     "role_hint": "database",
-    "model": "to-be-decided",
+    "model": "qwen3:4b",
     "provider": "ollama",
     "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
   },
@@ -31,7 +31,7 @@
     "name": "Abdurrahman-PC",
     "owner": "Abdurrahman",
     "role_hint": "testing",
-    "model": "to-be-decided",
+    "model": "qwen3:4b",
     "provider": "ollama",
     "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
   },
@@ -49,7 +49,7 @@
     "name": "Hamza-PC",
     "owner": "Hamza",
     "role_hint": "code_review",
-    "model": "to-be-decided",
+    "model": "qwen3:4b",
     "provider": "ollama",
     "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
   }
