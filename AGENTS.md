@@ -25,7 +25,7 @@ everything as simple as a course project allows.
    | Okan | `docs/` (except `docs/sprints/`), `AGENTS.md` |
    | Hamza | `docs/sprints/` |
 
-2. Read `docs/PROJECT_CONTRACT.md` completely. It fixes every shared name.
+2. Read `docs/contracts/PROJECT_CONTRACT.md` completely. It fixes every shared name.
 3. Find the current sprint: the highest-numbered folder in `docs/sprints/`
    that contains `member-guide.md`. Read its "Shared agreements" section and
    the section with the member's name.
