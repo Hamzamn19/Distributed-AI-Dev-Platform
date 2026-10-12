@@ -39,10 +39,10 @@ ollama pull qwen3:4b
 ```
 `docs/agents.json` already pins all six workers to `qwen3:4b`.
 
-Master PC (to be confirmed by Okan: Hamza or Baran) — Gemma via `llama-server`
-(`local-stack/models/gemma4-26b-a4b`, `gemma4-31b`); `LLM_BASE_URL` must point
-at its OpenAI-compatible endpoint, not Ollama's. Baran proceeds with a small
-local model until S1-08 is final.
+Master PC (team decision): Baran's PC, model via Ollama; Baran proceeds with a small
+local model until S1-08 is final. Workers reach it at
+`http://<Baran Tailscale IP>:8000` (Hamza's own Tailscale IP is `100.116.89.127` —
+that is a worker address, not the master). Okan records any change in the contract.
 
 ## Daily routine (Hamza asks in the group channel, 2-3x per week)
 
