@@ -4,6 +4,11 @@ Owner: Hamza (Scrum Master). Trello tracks status
 (Sprint Backlog -> In Progress -> In Review -> Done); git tracks the work:
 one branch per card, one owner per branch, PR per card. No direct push to `main`.
 
+Team decision (Oct 12): GitHub Issues (#2-#12) are the single authoritative task
+reference for Sprint 1; Trello is a secondary formal mirror for the course only.
+Any other card list (CSV imports, starter guides) is reference material, never
+a task source. Card IDs S1-01..S1-11 mean what the Issues say.
+
 Branch convention: `feature/<CARD>-<short-name>`, e.g. `feature/S1-07-worker-register`.
 Commit convention: `<CARD>: <what changed>`, e.g. `S1-07: add heartbeat loop`.
 Before every commit: run `pytest`, then `git status` (only your own folders may change).
