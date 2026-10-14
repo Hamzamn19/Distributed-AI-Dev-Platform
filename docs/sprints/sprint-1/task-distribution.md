@@ -27,7 +27,7 @@ Before every commit: run `pytest`, then `git status` (only your own folders may 
 | S1-01 | Hamza | `feature/S1-01-trello-planning` | `docs/sprints/` | `sprint-1/planning.md`, this file | — | 11 Trello cards with checklists; planning minutes filed |
 | S1-02 | Abdurrahman | `feature/S1-02-setup-guide` | root, `docs/SETUP.md` | `.env.example`, `requirements.txt`, `pytest.ini` | — | teammate finishes setup following only the guide |
 | S1-03 | Okan | `feature/S1-03-requirements` | `docs/` | `requirements.md`, `sample_requirements/library.md`, `architecture.md` | — | all Sprint 1 instructor items map to a requirement |
-| S1-04 | Fatma | `feature/S1-04-web-ui` | `frontend/` | `src/api/client.ts`, `src/pages/` (3 pages) | Baran endpoints | 3 pages on real API, no mock data, 3s refresh |
+| S1-04 | Fatma | `feature/S1-04-web-ui` | `frontend/` | `src/api/client.ts`, one page: task table (title, type, status, agent, reason) | Baran endpoints | task table renders from real API; form + agents page move to Sprint 2 |
 | S1-05 | Baran | `feature/S1-05-master-api` | `dap/master/api/` | `agents.py`, `projects.py` (endpoints) | Can agent funcs | register/heartbeat/list + create/list/get work via curl |
 | S1-06 | Baran | `feature/S1-06-decompose-assign` | `dap/master/core/`, `cli.py` | `decomposer.py`, `selector.py` | Eray `chat()`, Can project funcs | sample doc -> 4 task types with agents + reasons |
 | S1-07 | Eray | `feature/S1-07-worker-register` | `dap/worker/`, `dap/shared/llm_client.py` | `llm_client.py`, `master_client.py`, `main.py` | Baran agent endpoints (to test) | worker shows idle in `GET /agents`; re-registers alone |
