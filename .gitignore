@@ -1,5 +1,47 @@
-.env
-.venv/
+# Python
 __pycache__/
-master/data/*.db*
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+
+# Node
+node_modules/
+dist/
+.vite/
+
+# Environment and secrets (never commit these)
+.env
+.env.*
+!.env.example
+
+# Local data
+*.db
+*.sqlite3
+*.db-shm
+*.db-wal
+data/
+workspace/
+
+# Editors and OS
+.vscode/
+.idea/
 .DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# ---- Local AI stack (Gemma) -------------------------------------------------
+# Everything under local-stack/ keeps the whole AI setup in one place, but the
+# items below are multi-gigabyte binaries or per-machine state. They stay on
+# this disk and must never be committed.
+local-stack/models/
+local-stack/llama.cpp/
+local-stack/open-webui/app/
+local-stack/open-webui/data/
+*.gguf
+*.ggml
