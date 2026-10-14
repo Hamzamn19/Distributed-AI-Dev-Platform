@@ -4,6 +4,11 @@ Owner: Hamza (Scrum Master). Trello tracks status
 (Sprint Backlog -> In Progress -> In Review -> Done); git tracks the work:
 one branch per card, one owner per branch, PR per card. No direct push to `main`.
 
+Team decision (Oct 12): GitHub Issues (#2-#12) are the single authoritative task
+reference for Sprint 1; Trello is a secondary formal mirror for the course only.
+Any other card list (CSV imports, starter guides) is reference material, never
+a task source. Card IDs S1-01..S1-11 mean what the Issues say.
+
 Branch convention: `feature/<CARD>-<short-name>`, e.g. `feature/S1-07-worker-register`.
 Commit convention: `<CARD>: <what changed>`, e.g. `S1-07: add heartbeat loop`.
 Before every commit: run `pytest`, then `git status` (only your own folders may change).
@@ -52,3 +57,31 @@ that is a worker address, not the master). Okan records any change in the contra
    `chat()` mock + agent repo funcs (Oct 13), master endpoints + `agents.json`
    (Oct 14), decompose + assign + real API frontend (Oct 15), remote worker +
    smoke (Oct 16), final checks (Oct 17), review + report (Oct 18).
+
+## Thursday emergency demo scope (cut Oct 12: team on full university days)
+
+Goal for Thursday is reduced to one sentence: the models are reachable and the
+master answers through an interface. Everything else moves to Sprint 2.
+
+P0 — must work Thursday (demo fails without it):
+- Master boots on Baran's PC: `GET /api/v1/health` returns ok (S1-05 minimal).
+- `POST /agents/register` + heartbeat accept one worker from another PC (S1-05 minimal).
+- Every PC: `ollama pull qwen3:4b` done; `ollama run qwen3:4b "Hello"` answers (S1-08 minimal).
+- One real model call through the master path (CLI or `/docs`), rest may run on `LLM_MOCK=1`.
+- `pytest` green; `docs/sprints/sprint-1/report.md` filed honestly (reached / partly).
+
+P1 — include only if P0 is green by Wednesday night:
+- `decompose` + `assign` on the library sample (S1-06); task list visible in UI (S1-04).
+- `scripts/seed_agents.py` + `smoke_test.py` (S1-10).
+
+P2 — explicitly moved to Sprint 2: full UI polish, `docs/models.md`/`requirements.md`/
+`architecture.md`/`database.md` finishes, capability measurement, score-based assignment.
+
+Per-person micro-task (30-60 min each, Tue-Wed):
+Baran: boot + register endpoints (needs only Can's `upsert_agent`/`list_agents`).
+Can: `database.py` + `models.py` + agent functions only; project/task functions slip to Sprint 2.
+Eray: `chat()` + mock only; worker loop slips unless time remains.
+Fatma: pages render (mock allowed); real-API wiring only in P1.
+Okan: `library.md` sample only (demo input); other docs slip.
+Abdurrahman: Tailscale addresses collected + manual health checks; scripts only in P1.
+Hamza: mirror Trello, collect outputs, write report.
