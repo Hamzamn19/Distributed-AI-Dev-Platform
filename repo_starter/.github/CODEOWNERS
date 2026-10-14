@@ -1,0 +1,6 @@
+# Replace the placeholders with GitHub usernames when areas are agreed at Sprint 1 Planning.
+# Lines starting with # are ignored.
+# /backend/    @username
+# /frontend/   @username
+# /agents/     @username
+# /docs/       @username

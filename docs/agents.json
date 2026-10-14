@@ -1,0 +1,56 @@
+[
+  {
+    "agent_id": "agent-fatma",
+    "name": "Fatma-PC",
+    "owner": "Fatma",
+    "role_hint": "frontend",
+    "model": "qwen3:4b",
+    "provider": "ollama",
+    "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
+  },
+  {
+    "agent_id": "agent-eray",
+    "name": "Eray-PC",
+    "owner": "Eray",
+    "role_hint": "backend",
+    "model": "qwen3:4b",
+    "provider": "ollama",
+    "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
+  },
+  {
+    "agent_id": "agent-can",
+    "name": "Can-PC",
+    "owner": "Can",
+    "role_hint": "database",
+    "model": "qwen3:4b",
+    "provider": "ollama",
+    "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
+  },
+  {
+    "agent_id": "agent-abdurrahman",
+    "name": "Abdurrahman-PC",
+    "owner": "Abdurrahman",
+    "role_hint": "testing",
+    "model": "qwen3:4b",
+    "provider": "ollama",
+    "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
+  },
+  {
+    "agent_id": "agent-okan",
+    "name": "Okan-PC",
+    "owner": "Okan",
+    "role_hint": "integration",
+    "model": "qwen3:4b",
+    "provider": "ollama",
+    "capabilities": {"coding": 60, "reasoning": 60, "context": 50}
+  },
+  {
+    "agent_id": "agent-hamza",
+    "name": "Hamza-PC",
+    "owner": "Hamza",
+    "role_hint": "code_review",
+    "model": "qwen3:4b",
+    "provider": "ollama",
+    "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
+  }
+]
