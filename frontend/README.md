@@ -14,3 +14,9 @@ The React Compiler is not enabled on this template because of its impact on dev 
 ## Expanding the ESLint configuration
 
 If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+
+## Status
+
+Sprint 1: `src/api/client.ts` added. The agent list on the page comes from
+`GET /api/v1/agents` and refreshes every 3 seconds. If the master is not
+running, the page shows "Master unreachable" instead of crashing.

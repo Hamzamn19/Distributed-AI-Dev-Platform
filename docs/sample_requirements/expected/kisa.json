@@ -1,0 +1,43 @@
+{
+  "tasks": [
+    {
+      "id": "T1",
+      "category": "database",
+      "title": "Görev veri modelinin tasarımı",
+      "description": "Görev başlığı, açıklaması, durumu ve arşivlenme bayrağını barındıran veri yapısının oluşturulması.",
+      "priority": 1,
+      "depends_on": []
+    },
+    {
+      "id": "T2",
+      "category": "backend",
+      "title": "Görev iş kuralları ve durum yönetimi",
+      "description": "Yeni görev ekleme, en fazla 50 karakter başlık kısıtı doğrulama ve tamamlandı durumuna çekerek arşivleme iş kurallarının geliştirilmesi.",
+      "priority": 2,
+      "depends_on": [
+        "T1"
+      ]
+    },
+    {
+      "id": "T3",
+      "category": "frontend",
+      "title": "Görev listesi ve yönetim arayüzü",
+      "description": "Kullanıcının aktif görevlerini listeleyebileceği, yeni görev girebileceği ve tamamlandı olarak işaretleyebileceği kullanıcı ekranının yapılması.",
+      "priority": 3,
+      "depends_on": [
+        "T2"
+      ]
+    },
+    {
+      "id": "T4",
+      "category": "testing",
+      "title": "Görev takip işlevsel ve sınır testleri",
+      "description": "50 karakter başlık sınırı kısıtının, görev tamamlama akışının ve silme yerine arşivleme kuralının uçtan uca doğrulanması.",
+      "priority": 4,
+      "depends_on": [
+        "T2",
+        "T3"
+      ]
+    }
+  ]
+}
