@@ -1,0 +1,156 @@
+{
+  "tasks": [
+    {
+      "id": "T1",
+      "category": "database",
+      "title": "Hasta ve kimlik veri modelleri tasarımı",
+      "description": "T.C. Kimlik No, ad, soyad, doğum tarihi, acil durum irtibatı ve protokol numarasını saklayan hasta tablosunun tasarımı.",
+      "priority": 1,
+      "depends_on": []
+    },
+    {
+      "id": "T2",
+      "category": "database",
+      "title": "Poliklinik, doktor ve çalışma çizelgesi veri modelleri",
+      "description": "Poliklinik bilgileri, doktor-poliklinik eşleştirmeleri, izin/nöbet blokları ve 15 dakikalık muayene slotlarını tutan tabloların tasarımı.",
+      "priority": 1,
+      "depends_on": []
+    },
+    {
+      "id": "T3",
+      "category": "database",
+      "title": "Randevu ve muayene klinik veri modelleri",
+      "description": "Randevu durumu, onay kodları, muayene bulguları, teşhis kodları, reçete ve laboratuvar tetkik kayıtlarını tutan tabloların tasarımı.",
+      "priority": 1,
+      "depends_on": [
+        "T1",
+        "T2"
+      ]
+    },
+    {
+      "id": "T4",
+      "category": "backend",
+      "title": "Hasta kayıt ve kimlik doğrulama servisi",
+      "description": "Kimlik numarası denetimi, profil güncelleme ve benzersiz dijital protokol numarası üretme iş kurallarının geliştirilmesi.",
+      "priority": 2,
+      "depends_on": [
+        "T1"
+      ]
+    },
+    {
+      "id": "T5",
+      "category": "backend",
+      "title": "Poliklinik ve doktor slot yönetimi servisi",
+      "description": "Çalışma takvimi oluşturma, izin/nöbet saatlerini bloklama ve 15 dakikalık randevu aralıkları üretme mantığının geliştirilmesi.",
+      "priority": 2,
+      "depends_on": [
+        "T2"
+      ]
+    },
+    {
+      "id": "T6",
+      "category": "backend",
+      "title": "Randevu arama, oluşturma ve iptal servisi",
+      "description": "Aynı gün tek randevu, maksimum 3 aktif randevu kotası, randevuya 2 saat kalana kadar iptal ve mazeretsiz gelmeme yaptırımı kurallarının geliştirilmesi.",
+      "priority": 2,
+      "depends_on": [
+        "T3",
+        "T4",
+        "T5"
+      ]
+    },
+    {
+      "id": "T7",
+      "category": "backend",
+      "title": "Muayene, e-reçete ve tetkik takip servisi",
+      "description": "Muayene bulguları kaydı, dijital reçete yazımı, tetkik istemi oluşturma ve 24 saat sonra değiştirilemezlik kuralının işletilmesi.",
+      "priority": 2,
+      "depends_on": [
+        "T3",
+        "T4",
+        "T5"
+      ]
+    },
+    {
+      "id": "T8",
+      "category": "backend",
+      "title": "Bildirim ve idari analitik raporlama servisi",
+      "description": "Randevuya 24 saat kala hatırlatma, tetkik sonucu bilgilendirmesi ve poliklinik doluluk ile gelmeme oranlarını hesaplayan raporlama motorunun geliştirilmesi.",
+      "priority": 2,
+      "depends_on": [
+        "T6",
+        "T7"
+      ]
+    },
+    {
+      "id": "T9",
+      "category": "frontend",
+      "title": "Vatandaş hasta randevu ve sonuç portalı",
+      "description": "Hastaların hekim ve poliklinik arayabileceği, randevu alıp iptal edebileceği, reçete ve tahlil sonuçlarını inceleyebileceği arayüzün geliştirilmesi.",
+      "priority": 3,
+      "depends_on": [
+        "T4",
+        "T6",
+        "T8"
+      ]
+    },
+    {
+      "id": "T10",
+      "category": "frontend",
+      "title": "Poliklinik hekimi muayene ve klinik paneli",
+      "description": "Doktorun randevu listesini görebileceği, muayene notu düşebileceği, reçete yazabileceği ve tetkik isteyebileceği hekim ekranının geliştirilmesi.",
+      "priority": 3,
+      "depends_on": [
+        "T5",
+        "T6",
+        "T7"
+      ]
+    },
+    {
+      "id": "T11",
+      "category": "frontend",
+      "title": "Danışma personeli ve başhekimlik yönetim ekranları",
+      "description": "Danışmanın kimlik teyidi ve acil kayıt yapabileceği, başhekimliğin doluluk ve performans istatistiklerini izleyebileceği yönetim arayüzünün yapılması.",
+      "priority": 3,
+      "depends_on": [
+        "T4",
+        "T5",
+        "T8"
+      ]
+    },
+    {
+      "id": "T12",
+      "category": "testing",
+      "title": "Randevu kısıtları ve ceza mekanizması işlevsel testleri",
+      "description": "Aynı gün randevu engeli, 3 randevu kotası, geçmişe randevu açılmaması ve gelmeme durumunda 15 gün blokaj yaptırımlarının otomatik test edilmesi.",
+      "priority": 4,
+      "depends_on": [
+        "T6"
+      ]
+    },
+    {
+      "id": "T13",
+      "category": "testing",
+      "title": "Tıbbi veri gizliliği ve değiştirilemezlik güvenlik testleri",
+      "description": "Muayene ve tahlil kayıtlarının 24 saat sonra kilitlenmesi, yetkisiz hekimin hasta dosyasına erişim engeli ve veri maskeleme kurallarının doğrulanması.",
+      "priority": 4,
+      "depends_on": [
+        "T7"
+      ]
+    },
+    {
+      "id": "T14",
+      "category": "testing",
+      "title": "Sağlık sistemi uçtan uca senaryo kabul testleri",
+      "description": "Hasta kaydından randevu alımına, muayene, reçete ve tetkik sonuçlanmasına kadar tüm iş akışının uçtan uca doğrulanması.",
+      "priority": 4,
+      "depends_on": [
+        "T9",
+        "T10",
+        "T11",
+        "T12",
+        "T13"
+      ]
+    }
+  ]
+}
