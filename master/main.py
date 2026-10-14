@@ -44,7 +44,7 @@ class AgentRegistration(BaseModel):
 
 
 class ProjectRequest(BaseModel):
-    requirement: str = Field(min_length=1, description="Software requirement document")
+    requirement: str = Field(min_length=20, description="Software requirement document")
     allow_fallback: bool = True
     model: Optional[str] = Field(None, description=f"Ollama model, default {OLLAMA_MODEL}")
 
