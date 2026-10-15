@@ -3,6 +3,7 @@ import { getAgents } from './api/client'
 
 const STATUS_STYLE = {
   idle: { text: 'Idle', color: 'text-emerald-700' },
+  online: { text: 'Online', color: 'text-emerald-700' },
   busy: { text: 'Busy', color: 'text-amber-600' },
   offline: { text: 'Offline', color: 'text-slate-500' },
 }
