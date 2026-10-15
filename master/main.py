@@ -14,6 +14,7 @@ from typing import List, Optional
 
 import uvicorn
 from fastapi import APIRouter, Depends, FastAPI, Header, HTTPException, status
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 
 import db
@@ -246,6 +247,50 @@ def get_project(project_id: str) -> dict:
 
 
 app.include_router(api)
+
+
+# --- Frontend compatibility (/api/v1, no token) ------------------------------
+# Contract (docs/contracts/PROJECT_CONTRACT.md): paths start with /api/v1 and
+# frontend-called endpoints need no token (browsers cannot keep secrets).
+# Baran's own paths above stay untouched (Streamlit dashboard + CLI use them).
+# Fatma reads these field names: agents have agent_id/model/status,
+# projects have project_id/tasks[{task_id,task_type,title,assigned_agent,score,depends_on}].
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+v1 = APIRouter(prefix="/api/v1")
+
+
+@v1.get("/agents")
+def v1_list_agents() -> list:
+    """Token-free agent list for the web UI (same data as GET /agents)."""
+    return list_agents()["agents"]
+
+
+@v1.post("/projects", status_code=201)
+def v1_create_project(body: ProjectRequest) -> dict:
+    """Token-free project create+decompose for the web UI.
+
+    Body is Baran's shape: {"requirement": "<20+ chars>"}.
+    """
+    return create_project(body)
+
+
+@v1.get("/projects/{project_id}")
+def v1_get_project(project_id: str) -> dict:
+    """Token-free project read for the web UI (same data as GET /projects/{id})."""
+    project = get_project(project_id)
+    if project is None:
+        raise HTTPException(404, f"Project {project_id!r} not found")
+    return project
+
+
+app.include_router(v1)
 
 
 def main() -> None:
