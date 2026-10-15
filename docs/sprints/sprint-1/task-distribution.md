@@ -53,10 +53,10 @@ that is a worker address, not the master). Okan records any change in the contra
 
 1. What did you finish (branch + PR link)?
 2. What is next (card + step)?
-3. Blockers — critical dates first: shared contract in `main` (done),
-   `chat()` mock + agent repo funcs (Oct 13), master endpoints + `agents.json`
-   (Oct 14), decompose + assign + real API frontend (Oct 15), remote worker +
-   smoke (Oct 16), final checks (Oct 17), review + report (Oct 18).
+3. Blockers — Thursday Oct 15 is demo day (moved up from Oct 18): P0 must be green
+   Wednesday night (master boots, register works, fallback decompose verified,
+   pytest green). Thursday: live demo on Baran's PC + report. Oct 16-18 items
+   below now belong to Sprint 2 (#21-#30).
 
 ## Thursday emergency demo scope (cut Oct 12: team on full university days)
 
