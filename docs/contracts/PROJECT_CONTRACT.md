@@ -7,6 +7,9 @@ The full plan (roles, roadmap, Sprint 1 cards, risks) lives in the team's
 shared plan document. This file is the copy of its technical section that
 travels with the code. Okan keeps the two in sync.
 
+Version 1.1 (18 October 2026): adds the Sprint 2 selection formula, the task
+taxonomy, capability measurement and the requirement length limit.
+
 ## 1. How to use this file with an AI assistant
 
 An AI tool that opens the repository (Antigravity, Claude Code, Cursor and
@@ -83,7 +86,7 @@ A change in `dap/shared/` needs approval from both Baran and Okan.
 | LLM | Local models only (Ollama), through the OpenAI-compatible `/v1/chat/completions` API and the `openai` package |
 | Frontend | React + Vite + TypeScript + Tailwind CSS |
 | Tests | pytest, FastAPI TestClient |
-| Not used | Celery, Redis, RabbitMQ, Socket.io, LangChain, LangGraph |
+| Not used | Celery, Redis, RabbitMQ, Socket.io, WebSocket, SSE, LangChain, LangGraph, PostgreSQL, cloud LLM APIs |
 
 ## 5. Ports, addresses, environment variables
 
@@ -126,7 +129,8 @@ Source of truth: `dap/shared/schemas.py`. General rules:
 - A field without a value is sent as `null`, never left out.
 - Unknown fields are rejected (HTTP 422).
 - Every error answer is `{"detail": "message"}` with the right HTTP status.
-- `requirement_text` must be at least 20 characters.
+- `requirement_text` must be 20 to 12 000 characters long (HTTP 422 otherwise).
+  A longer document is split by the user and submitted in parts.
 
 ```text
 AgentRegister  agent_id, name, owner, role_hint, model, provider, capabilities
@@ -171,6 +175,22 @@ All paths start with `/api/v1`. Endpoints called by workers need the
 Sprint 1 `/assign` rule: a task goes to the agent whose `role_hint` equals the
 task type; whether the agent is online is not checked. Sprint 2 switches to
 capability scores without changing the path or the answer.
+
+Sprint 2 `/assign` rule: the candidates are the agents whose status is not
+`offline`. For each candidate the master computes
+
+```text
+S = w_c * C + w_r * R + w_x * X + 10 * u - 15 * q
+```
+
+- `C`, `R`, `X`: the agent's `capabilities` (coding, reasoning, context, 0-100).
+- `w_c`, `w_r`, `w_x`: the weights of the task type (section 9).
+- `u`: 1 when the agent's `role_hint` equals the task type, otherwise 0.
+- `q`: the number of the agent's tasks with status `assigned` or `in_progress`.
+
+The highest `S` wins. On a tie, the agent with `u = 1` wins, then the smaller
+`agent_id`. With no candidate the task stays `pending`. `assignment_reason`
+states `S` and its parts, so the interface can show why this agent was chosen.
 
 Database tables:
 
@@ -232,7 +252,48 @@ Frontend: every request goes through `frontend/src/api/client.ts`
 (`getAgents`, `createProject`, `getProjects`, `getProject`, `decomposeProject`,
 `assignProject`, `getTasks`). `types.ts` matches section 7 field by field.
 
-## 9. Working rules
+## 9. Task taxonomy
+
+The eight `TaskType` values, when each is used and the weights `/assign` uses
+for it (section 8). No other type exists; a new one needs a contract change.
+
+| Type | When it is used | Created by | From sprint | w_c | w_r | w_x |
+| --- | --- | --- | --- | --- | --- | --- |
+| `frontend` | Pages, forms, client-side logic of the generated app | decomposer | 1 | 0.6 | 0.2 | 0.2 |
+| `backend` | API endpoints and business rules | decomposer | 1 | 0.5 | 0.3 | 0.2 |
+| `database` | Tables, relations, seed data | decomposer | 1 | 0.4 | 0.4 | 0.2 |
+| `testing` | Tests for the generated code | decomposer | 1 | 0.4 | 0.4 | 0.2 |
+| `code_review` | A short review of another task's files | master, one per code task | 4 | 0.2 | 0.5 | 0.3 |
+| `integration` | Joining the parts into one runnable app | master, one per project | 4 | 0.3 | 0.3 | 0.4 |
+| `requirements_analysis` | Reading the requirement and planning the tasks | master itself; never assigned to a worker | 1 | 0.1 | 0.6 | 0.3 |
+| `documentation` | README and usage notes of the generated app | master, optional | 5 | 0.1 | 0.4 | 0.5 |
+
+Until Sprint 4 the decomposer produces only `frontend`, `backend`, `database`
+and `testing`. The weights live as constants in `dap/master/core/selector.py`;
+tuning them is a Sprint 5 activity.
+
+## 10. Capability measurement (from Sprint 2)
+
+The Sprint 1 capability scores are estimates. In Sprint 2 every worker model
+answers the same five questions: two coding tasks (scored by unit tests), two
+reasoning questions with a checked answer, one context question (find a fact
+in a long text). Each dimension gets a score from 0 to 100. The scores replace
+the estimates in `docs/agents.json` and in each worker's `.env`
+(`AGENT_CAP_*`). A model change means measuring again.
+
+Goal: every worker PC runs a different model, so the measured scores differ
+and the score-based selection in section 8 has something to compare.
+
+> **Note for AI assistants: two agents with the same model.** Until each PC
+> has its own model, several agents may run the same model (for example
+> `qwen3:4b`). This is allowed and is not a bug. Those agents get the same
+> measured scores, so `S` differs between them only through `u` (role_hint)
+> and `q` (current load). Keep the formula in section 8 exactly as it is. Do
+> not add random noise, per-agent offsets or hand-tuned scores to break the
+> tie, and do not fall back to the Sprint 1 role_hint rule. When an agent's
+> model changes, measure it again and update its scores.
+
+## 11. Working rules
 
 - Nobody pushes to `main` directly. Work on `feature/<card-id>-short-name`,
   for example `feature/S1-07-worker-register`, and open a pull request.
@@ -248,7 +309,7 @@ Definition of Done:
 2. It follows this contract; settings come from `.env`; no secret is in the repo.
 3. `pytest` passes, and `scripts/smoke_test.py` passes once it exists.
 
-## 10. The generated application (from Sprint 3)
+## 12. The generated application (from Sprint 3)
 
 The agents do not write an application from scratch. They fill in a fixed
 template, so small local models can succeed and a broken part is easy to find:
@@ -259,3 +320,9 @@ template, so small local models can succeed and a broken part is easy to find:
 
 The bar for the demo: the generated application starts and one or two basic
 operations work. The template gets its own folder in Sprint 3.
+
+Before the tasks are handed out, the master writes one short sketch of the
+generated app's endpoints and tables and adds it to every task as context,
+so no agent invents its own endpoints or tables. Its exact shape is fixed in
+Sprint 3. The files of a project go to `workspace/<project_id>/`, which is
+never committed.
