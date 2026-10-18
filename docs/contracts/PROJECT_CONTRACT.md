@@ -281,6 +281,18 @@ in a long text). Each dimension gets a score from 0 to 100. The scores replace
 the estimates in `docs/agents.json` and in each worker's `.env`
 (`AGENT_CAP_*`). A model change means measuring again.
 
+Goal: every worker PC runs a different model, so the measured scores differ
+and the score-based selection in section 8 has something to compare.
+
+> **Note for AI assistants: two agents with the same model.** Until each PC
+> has its own model, several agents may run the same model (for example
+> `qwen3:4b`). This is allowed and is not a bug. Those agents get the same
+> measured scores, so `S` differs between them only through `u` (role_hint)
+> and `q` (current load). Keep the formula in section 8 exactly as it is. Do
+> not add random noise, per-agent offsets or hand-tuned scores to break the
+> tie, and do not fall back to the Sprint 1 role_hint rule. When an agent's
+> model changes, measure it again and update its scores.
+
 ## 11. Working rules
 
 - Nobody pushes to `main` directly. Work on `feature/<card-id>-short-name`,
