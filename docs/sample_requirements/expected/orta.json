@@ -1,47 +1,42 @@
 {
   "tasks": [
     {
-      "id": "T1",
-      "category": "database",
+      "key": "T1",
       "title": "Kitap ve stok veri modeli tasarımı",
       "description": "Kitap adı, yazar, basım yılı, benzersiz ISBN ve kopya adedi bilgilerini barındıran veri yapısının oluşturulması.",
-      "priority": 1,
+      "type": "database",
       "depends_on": []
     },
     {
-      "id": "T2",
-      "category": "database",
+      "key": "T2",
       "title": "Üye, ödünç ve ceza veri modelleri tasarımı",
       "description": "Üye bilgileri, 15 günlük ödünç alma/iade hareketleri ve gecikme cezası kayıtlarını saklayan veri yapısının oluşturulması.",
-      "priority": 1,
+      "type": "database",
       "depends_on": []
     },
     {
-      "id": "T3",
-      "category": "backend",
+      "key": "T3",
       "title": "Kitap tanımlama ve katalog yönetimi servisi",
       "description": "Yeni kitap tanımlama, kopya adedi güncelleme ve stok kontrolü iş kurallarının geliştirilmesi.",
-      "priority": 2,
+      "type": "backend",
       "depends_on": [
         "T1"
       ]
     },
     {
-      "id": "T4",
-      "category": "backend",
+      "key": "T4",
       "title": "Üye kayıt ve profil doğrulama servisi",
       "description": "Benzersiz üye numarası oluşturma ve üye iletişim bilgilerinin yönetilmesi mantığının geliştirilmesi.",
-      "priority": 2,
+      "type": "backend",
       "depends_on": [
         "T2"
       ]
     },
     {
-      "id": "T5",
-      "category": "backend",
+      "key": "T5",
       "title": "Ödünç alma, iade ve ceza hesaplama servisi",
       "description": "Maksimum 3 kitap sınırı, 15 gün ödünç süresi, gecikme cezası hesaplama ve borcu olan üyeyi engelleme iş kurallarının geliştirilmesi.",
-      "priority": 2,
+      "type": "backend",
       "depends_on": [
         "T1",
         "T2",
@@ -50,11 +45,10 @@
       ]
     },
     {
-      "id": "T6",
-      "category": "frontend",
+      "key": "T6",
       "title": "Kütüphane görevlisi yönetim paneli",
       "description": "Görevlinin kitap ekleyebileceği, üye kaydedebileceği, ödünç/iade işlemlerini yürütebileceği ve cezaları tahsil edebileceği arayüzün geliştirilmesi.",
-      "priority": 3,
+      "type": "frontend",
       "depends_on": [
         "T3",
         "T4",
@@ -62,32 +56,29 @@
       ]
     },
     {
-      "id": "T7",
-      "category": "frontend",
+      "key": "T7",
       "title": "Üye kitap kataloğu ve durum ekranı",
       "description": "Üyelerin mevcut kitapları arayabileceği, üzerlerindeki ödünç ve ceza durumunu görüntüleyebileceği ekranın yapılması.",
-      "priority": 3,
+      "type": "frontend",
       "depends_on": [
         "T3",
         "T5"
       ]
     },
     {
-      "id": "T8",
-      "category": "testing",
+      "key": "T8",
       "title": "İş kuralları ve ceza hesaplama testleri",
       "description": "Maksimum 3 kitap kotası, 15 gün aşımında günlük ceza işletilmesi ve borç durumunda ödünç engeli kurallarının test edilmesi.",
-      "priority": 4,
+      "type": "testing",
       "depends_on": [
         "T5"
       ]
     },
     {
-      "id": "T9",
-      "category": "testing",
+      "key": "T9",
       "title": "Kütüphane sistemi uçtan uca kabul testleri",
       "description": "Kitap eklemeden üye kaydına, ödünç alma ve iade işlemlerinden ceza ödemesine kadar olan tüm sürecin uçtan uca doğrulanması.",
-      "priority": 4,
+      "type": "testing",
       "depends_on": [
         "T6",
         "T7",
