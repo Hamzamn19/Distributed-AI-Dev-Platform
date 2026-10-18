@@ -1,0 +1,6 @@
+{
+    "orchestrator": "Partner-PC (Windows)",
+    "worker": "WSL-Node (Linux)",
+    "network": "Tailscale Mesh",
+    "status": "seeded"
+}
