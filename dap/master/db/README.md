@@ -1,4 +1,4 @@
-# Master database (S1-09)
+# Master database (S1-09, S2-05)
 
 Owner: Can. This package stores the platform's agents, projects and tasks.
 It follows `docs/contracts/PROJECT_CONTRACT.md`; API/core code calls repository
@@ -7,8 +7,10 @@ functions and does not handle SQLAlchemy sessions directly.
 ## Status
 
 - `database.py`, the three ORM tables and all 13 repository functions are implemented.
-- 18 database tests cover registration, heartbeats, projects/tasks, assignment,
+- 21 database tests cover registration, heartbeats, projects/tasks, assignment,
   constraints, atomic rollback and persistence across separate processes.
+- S2-05 agent/project checks additionally verify busy-agent re-registration,
+  refreshed heartbeats preventing stale detection, and isolated project status updates.
 - `docs/database.md` contains the ER diagram and sample queries.
 - Master API wiring belongs to Baran and is not changed by this card.
 
