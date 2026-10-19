@@ -88,6 +88,55 @@ def test_heartbeat_updates_state_and_unknown_returns_false(store, registration):
     assert agent.last_heartbeat_at.tzinfo == timezone.utc
 
 
+def test_busy_agent_re_registration_refreshes_metadata_and_clears_task(store, registration):
+    first = repositories.upsert_agent(registration)
+    repositories.touch_heartbeat(registration.agent_id, AgentStatus.BUSY, "old-task")
+    old_heartbeat = datetime.now(timezone.utc) - timedelta(minutes=5)
+    with store[1].begin() as session:
+        session.get(AgentModel, registration.agent_id).last_heartbeat_at = old_heartbeat
+
+    changed = AgentRegister(
+        agent_id=registration.agent_id,
+        name="Updated-PC",
+        owner="Updated owner",
+        role_hint=None,
+        model="updated-test-model",
+        provider="updated-test-provider",
+        capabilities=Capabilities(coding=91, reasoning=82, context=73),
+    )
+    refreshed = repositories.upsert_agent(changed)
+
+    assert refreshed.model_dump(include=set(AgentRegister.model_fields)) == changed.model_dump()
+    assert refreshed.status == AgentStatus.IDLE
+    assert refreshed.current_task_id is None
+    assert refreshed.registered_at == first.registered_at
+    assert refreshed.last_heartbeat_at > old_heartbeat
+    assert repositories.get_agent(registration.agent_id) == refreshed
+    assert repositories.list_agents() == [refreshed]
+
+
+def test_fresh_heartbeat_prevents_offline_and_idle_clears_current_task(store, registration):
+    first = repositories.upsert_agent(registration)
+    with store[1].begin() as session:
+        session.get(AgentModel, registration.agent_id).last_heartbeat_at = (
+            datetime.now(timezone.utc) - timedelta(minutes=5)
+        )
+
+    assert repositories.touch_heartbeat(registration.agent_id, AgentStatus.BUSY, "task-1")
+    assert repositories.mark_stale_agents_offline(60) == 0
+    busy = repositories.get_agent(registration.agent_id)
+    assert busy.status == AgentStatus.BUSY
+    assert busy.current_task_id == "task-1"
+    assert busy.last_heartbeat_at >= first.last_heartbeat_at
+
+    assert repositories.touch_heartbeat(registration.agent_id, AgentStatus.IDLE, None)
+    idle = repositories.get_agent(registration.agent_id)
+    assert idle.status == AgentStatus.IDLE
+    assert idle.current_task_id is None
+    assert idle.registered_at == first.registered_at
+    assert idle.last_heartbeat_at >= busy.last_heartbeat_at
+
+
 def test_stale_agents_and_re_registration(store, registration):
     repositories.upsert_agent(registration)
     fresh = registration.model_copy(update={"agent_id": "agent-fresh"})
@@ -147,6 +196,27 @@ def test_project_round_trip_and_status(store, project_data):
     assert changed.updated_at.tzinfo == timezone.utc
     with pytest.raises(ValueError):
         repositories.set_project_status("unknown", ProjectStatus.FAILED)
+
+
+def test_project_status_update_preserves_content_and_other_projects(store, project_data):
+    first = repositories.create_project(project_data)
+    second = repositories.create_project(
+        ProjectCreate(name="Shop", requirement_text="Build an online shop with product listings.")
+    )
+    assert first.id != second.id
+
+    repositories.set_project_status(first.id, ProjectStatus.DECOMPOSING)
+    changed = repositories.get_project(first.id)
+    assert changed.status == ProjectStatus.DECOMPOSING
+    assert changed.name == first.name
+    assert changed.requirement_text == first.requirement_text
+    assert changed.created_at == first.created_at
+    assert changed.updated_at >= first.updated_at
+    assert repositories.get_project(second.id) == second
+    assert {project.id: project for project in repositories.list_projects()} == {
+        first.id: changed,
+        second.id: second,
+    }
 
 
 def test_task_batch_dependencies_and_project_filter(store, project_data):
