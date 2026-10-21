@@ -7,9 +7,10 @@ React + TypeScript + Vite + Tailwind CSS web interface for the master API.
 | Path | Page |
 | --- | --- |
 | `/` | New project form and list of existing projects |
+| `/projects/:id` | Project status, Decompose / Assign agents buttons, task board |
 | `/agents` | Registered agents: name, owner, model, role hint, scores, status |
 
-Both pages refresh every 3 seconds. All API calls live in `src/api/client.ts`;
+The project and agents pages refresh every 3 seconds. All API calls live in `src/api/client.ts`;
 pages never call `fetch` directly.
 
 ## Run
@@ -25,6 +26,5 @@ Open http://localhost:5173.
 
 ## Status
 
-Sprint 2 (S2-06): agents page and new-project form are finished and use sample
-data (`src/api/mock.ts`, "Sample data" badge). The task board comes next. When
-S2-01 is in main, `client.ts` switches to the real API and `mock.ts` is deleted.
+Sprint 2 (S2-06): agents page, new-project form and task board are finished and
+use sample data (`src/api/mock.ts`, "Sample data" badge). When S2-01 is in main, `client.ts` switches to the real API and `mock.ts` is deleted.

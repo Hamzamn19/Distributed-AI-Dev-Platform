@@ -1,7 +1,7 @@
 // All calls to the master API go through this file. Pages never call fetch directly.
 // While USING_MOCK is true, the functions return sample data from mock.ts.
 // When S2-01 is in main: replace each body with request(...) and delete mock.ts.
-import type { Agent, Project, ProjectCreate } from "./types";
+import type { Agent, Project, ProjectCreate, Task, TaskType } from "./types";
 import { mockAgents, mockProjects } from "./mock";
 
 export const USING_MOCK = true;
@@ -29,7 +29,15 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ---- mock state (removed together with mock.ts) ----
 const projects = [...mockProjects];
+const tasks: Task[] = [];
 const delay = () => new Promise((resolve) => setTimeout(resolve, 300));
+const stamp = () => new Date().toISOString();
+
+function findProject(id: string): Project {
+  const project = projects.find((p) => p.id === id);
+  if (!project) throw new Error("Project not found");
+  return project;
+}
 
 export async function getAgents(): Promise<Agent[]> {
   await delay();
@@ -46,7 +54,7 @@ export async function createProject(data: ProjectCreate): Promise<Project> {
   if (data.requirement_text.length < 20) {
     throw new Error("Requirement text must be at least 20 characters");
   }
-  const now = new Date().toISOString();
+  const now = stamp();
   const project: Project = {
     id: `project-${projects.length + 1}`,
     name: data.name,
@@ -57,4 +65,61 @@ export async function createProject(data: ProjectCreate): Promise<Project> {
   };
   projects.unshift(project);
   return project;
+}
+
+export async function getProject(id: string): Promise<Project> {
+  await delay();
+  return findProject(id);
+}
+
+export async function getTasks(id: string): Promise<Task[]> {
+  await delay();
+  return tasks.filter((t) => t.project_id === id);
+}
+
+export async function decomposeProject(id: string): Promise<Task[]> {
+  await delay();
+  const project = findProject(id);
+  const sample: { title: string; type: TaskType; deps: number[] }[] = [
+    { title: "Design database schema", type: "database", deps: [] },
+    { title: "Build REST API", type: "backend", deps: [0] },
+    { title: "Build web pages", type: "frontend", deps: [1] },
+    { title: "Write tests", type: "testing", deps: [1, 2] },
+  ];
+  for (let i = tasks.length - 1; i >= 0; i--) {
+    if (tasks[i].project_id === id) tasks.splice(i, 1);
+  }
+  const now = stamp();
+  const created: Task[] = sample.map((s, i) => ({
+    id: `${id}-task-${i + 1}`,
+    project_id: id,
+    title: s.title,
+    description: "",
+    type: s.type,
+    status: "pending",
+    depends_on: s.deps.map((d) => `${id}-task-${d + 1}`),
+    assigned_agent_id: null,
+    assignment_reason: null,
+    attempt: 0,
+    created_at: now,
+    updated_at: now,
+  }));
+  tasks.push(...created);
+  project.status = "in_progress";
+  project.updated_at = now;
+  return created;
+}
+
+export async function assignProject(id: string): Promise<Task[]> {
+  await delay();
+  const projectTasks = tasks.filter((t) => t.project_id === id);
+  if (projectTasks.length === 0) throw new Error("Decompose the project first");
+  for (const task of projectTasks) {
+    const agent = mockAgents.find((a) => a.role_hint === task.type) ?? mockAgents[0];
+    task.assigned_agent_id = agent.agent_id;
+    task.assignment_reason = `Role hint "${agent.role_hint}" matches task type "${task.type}"; coding score ${agent.capabilities.coding}`;
+    task.status = "assigned";
+    task.updated_at = stamp();
+  }
+  return projectTasks;
 }
