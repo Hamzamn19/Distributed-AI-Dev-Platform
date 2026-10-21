@@ -97,3 +97,73 @@ def test_decompose_end_to_end_uses_mock_llm():
     project = _create()
     tasks = client.post(f"/api/v1/projects/{project['id']}/decompose").json()
     assert [t["title"] for t in tasks]
+
+
+# ---------------------------------------------------------------- /assign
+
+
+def _register(agent_id, coding, reasoning, context, role=None):
+    from dap.master.db import repositories
+    from dap.shared.schemas import AgentRegister, Capabilities
+
+    return repositories.upsert_agent(AgentRegister(
+        agent_id=agent_id, name=agent_id, owner="t", role_hint=role, model="m",
+        capabilities=Capabilities(coding=coding, reasoning=reasoning, context=context),
+    ))
+
+
+def _only(monkeypatch, agents):
+    monkeypatch.setattr(projects.repositories, "list_agents", lambda: agents)
+
+
+def test_assign_without_tasks_gives_409():
+    project = _create()
+    response = client.post(f"/api/v1/projects/{project['id']}/assign")
+    assert response.status_code == 409
+    assert "detail" in response.json()
+
+
+def test_assign_unknown_project_gives_404():
+    assert client.post(f"/api/v1/projects/{uuid.uuid4()}/assign").status_code == 404
+
+
+def test_assign_fills_agent_and_reason(monkeypatch):
+    agents = [_register("assign-a", 90, 80, 70), _register("assign-b", 60, 60, 60)]
+    _only(monkeypatch, agents)
+    project = _create()
+    client.post(f"/api/v1/projects/{project['id']}/decompose")
+    response = client.post(f"/api/v1/projects/{project['id']}/assign")
+    assert response.status_code == 200
+    tasks = [Task.model_validate(t) for t in response.json()]
+    assert len(tasks) == 4
+    for task in tasks:
+        assert task.status == "assigned"
+        assert task.assigned_agent_id in {"assign-a", "assign-b"}
+        assert task.assignment_reason.startswith("S=")
+
+
+def test_assign_spreads_load_over_agents(monkeypatch):
+    agents = [_register("load-a", 80, 80, 80), _register("load-b", 79, 79, 79)]
+    _only(monkeypatch, agents)
+    project = _create()
+    client.post(f"/api/v1/projects/{project['id']}/decompose")
+    tasks = client.post(f"/api/v1/projects/{project['id']}/assign").json()
+    assert {t["assigned_agent_id"] for t in tasks} == {"load-a", "load-b"}
+
+
+def test_assign_without_candidates_keeps_tasks_pending(monkeypatch):
+    _only(monkeypatch, [])
+    project = _create()
+    client.post(f"/api/v1/projects/{project['id']}/decompose")
+    tasks = client.post(f"/api/v1/projects/{project['id']}/assign").json()
+    assert all(t["status"] == "pending" and t["assigned_agent_id"] is None for t in tasks)
+
+
+def test_assign_twice_does_not_reassign(monkeypatch):
+    _only(monkeypatch, [_register("twice-a", 80, 80, 80)])
+    project = _create()
+    client.post(f"/api/v1/projects/{project['id']}/decompose")
+    first = client.post(f"/api/v1/projects/{project['id']}/assign").json()
+    second = client.post(f"/api/v1/projects/{project['id']}/assign").json()
+    key = lambda t: t["id"]
+    assert sorted(first, key=key) == sorted(second, key=key)
