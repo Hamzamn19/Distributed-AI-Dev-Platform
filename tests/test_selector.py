@@ -1,10 +1,74 @@
+import os
+import sqlite3
 from datetime import datetime, timezone
 
+import pytest
+
 from dap.master.core.selector import select_agent
+from dap.master.db import repositories
 from dap.shared.enums import AgentStatus, TaskStatus, TaskType
-from dap.shared.schemas import Agent, Capabilities, Task
+from dap.shared.schemas import Agent, AgentRegister, Capabilities, ProjectCreate, Task, TaskCreate
 
 NOW = datetime.now(timezone.utc)
+
+# Parents before children on restore, children before parents on delete.
+_TABLES = ("agents", "projects", "tasks")
+
+
+def _connect() -> sqlite3.Connection:
+    url = os.environ["DATABASE_URL"]
+    assert url.startswith("sqlite:///"), url
+    return sqlite3.connect(url.removeprefix("sqlite:///"))
+
+
+@pytest.fixture(autouse=True)
+def _isolated_tables():
+    """Empty queue tables for each selector test; other tests' rows come back untouched.
+
+    select_agent reads `q` from the repository (contract section 8), so the
+    rows earlier test files left behind must not leak into these tests.
+    """
+    conn = _connect()
+    saved = []
+    for table in _TABLES:
+        cursor = conn.execute(f"SELECT * FROM {table}")
+        saved.append((table, [d[0] for d in cursor.description], cursor.fetchall()))
+    for table, _, _ in reversed(saved):
+        conn.execute(f"DELETE FROM {table}")
+    conn.commit()
+    conn.close()
+    try:
+        yield
+    finally:
+        conn = _connect()
+        for table, _, _ in reversed(saved):
+            conn.execute(f"DELETE FROM {table}")
+        for table, columns, rows in saved:
+            if rows:
+                marks = ",".join("?" * len(columns))
+                conn.executemany(
+                    f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({marks})", rows
+                )
+        conn.commit()
+        conn.close()
+
+
+def _queue_for(agent_id: str, count: int) -> None:
+    """Give the agent `count` assigned tasks in the repository (the contract's `q`)."""
+    repositories.upsert_agent(AgentRegister(
+        agent_id=agent_id, name=agent_id, owner="x", model="m",
+        capabilities=Capabilities(coding=1, reasoning=1, context=1),
+    ))
+    project = repositories.create_project(
+        ProjectCreate(name="queue", requirement_text="seeded queue requirement")
+    )
+    tasks = repositories.create_tasks(project.id, [
+        TaskCreate(id=f"{agent_id}-q{i}", title="t", description="d",
+                   type=TaskType.BACKEND)
+        for i in range(count)
+    ])
+    for task in tasks:
+        repositories.assign_task(task.id, agent_id, "seeded")
 
 
 def _agent(agent_id, coding, reasoning, context, role=None, status=AgentStatus.IDLE) -> Agent:
@@ -59,8 +123,13 @@ def test_equal_score_prefers_role_hint():
 
 def test_loaded_agent_loses():
     agents = [_agent("a", 80, 80, 80), _agent("b", 70, 70, 70)]
-    assert select_agent(_task(), agents, {"a": 1})[0].agent_id == "b"
-    assert select_agent(_task(), agents, {"a": 0})[0].agent_id == "a"
+    assert select_agent(_task(), agents)[0].agent_id == "a"
+    # q is scored per contract section 8: a: 80 - 15*2 = 50; b: 70 - 15*1 = 55
+    _queue_for("a", 2)
+    _queue_for("b", 1)
+    chosen, reason = select_agent(_task(), agents)
+    assert chosen.agent_id == "b"
+    assert "queue -15" in reason
 
 
 def test_offline_agents_are_not_candidates():

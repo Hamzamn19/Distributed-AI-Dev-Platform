@@ -5,7 +5,7 @@ Owner: Baran.
     python -m dap.master.cli agents
     python -m dap.master.cli project <file or text> [--name NAME]
 
-The master address comes from MASTER_URL (default http://localhost:8000).
+The master address comes from MASTER_URL in .env (no default).
 """
 
 import argparse
@@ -71,8 +71,10 @@ def main(argv: list[str] | None = None, client: httpx.Client | None = None) -> i
 
     if client is None:
         load_dotenv()
-        client = httpx.Client(base_url=os.getenv("MASTER_URL", "http://localhost:8000"),
-                              timeout=300)
+        base_url = os.getenv("MASTER_URL")
+        if not base_url:
+            sys.exit("MASTER_URL is not set. Add MASTER_URL=... to .env (see .env.example).")
+        client = httpx.Client(base_url=base_url, timeout=300)
     try:
         if args.command == "agents":
             print(show_agents(client))
