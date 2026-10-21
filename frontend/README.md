@@ -1,22 +1,30 @@
-# React + Vite
+# Frontend
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+React + TypeScript + Vite + Tailwind CSS web interface for the master API.
 
-Currently, two official plugins are available:
+## Pages
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+| Path | Page |
+| --- | --- |
+| `/` | New project form and list of existing projects |
+| `/agents` | Registered agents: name, owner, model, role hint, scores, status |
 
-## React Compiler
+Both pages refresh every 3 seconds. All API calls live in `src/api/client.ts`;
+pages never call `fetch` directly.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+## Run
 
-## Expanding the ESLint configuration
+```bash
+cd frontend
+npm install
+cp .env.example .env     # set VITE_API_BASE_URL to the master address
+npm run dev
+```
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+Open http://localhost:5173.
 
 ## Status
 
-Sprint 1: `src/api/client.ts` added. The agent list on the page comes from
-`GET /api/v1/agents` and refreshes every 3 seconds. If the master is not
-running, the page shows "Master unreachable" instead of crashing.
+Sprint 2 (S2-06): agents page and new-project form are finished and use sample
+data (`src/api/mock.ts`, "Sample data" badge). The task board comes next. When
+S2-01 is in main, `client.ts` switches to the real API and `mock.ts` is deleted.
