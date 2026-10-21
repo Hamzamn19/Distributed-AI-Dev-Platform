@@ -1,5 +1,6 @@
 import { useCallback, useState } from "react";
 import type { FormEvent } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { createProject, getProjects } from "../api/client";
 import Badge from "../components/Badge";
 import { usePolling } from "../hooks/usePolling";
@@ -7,14 +8,14 @@ import { usePolling } from "../hooks/usePolling";
 const MIN_LENGTH = 20;
 
 export default function NewProjectPage() {
+  const navigate = useNavigate();
   const [name, setName] = useState("");
   const [text, setText] = useState("");
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
 
   const loadProjects = useCallback(() => getProjects(), []);
-  const { data: projects, error: listError, loading, refresh } = usePolling(loadProjects);
+  const { data: projects, error: listError, loading } = usePolling(loadProjects);
 
   const length = text.trim().length;
   const canSubmit = name.trim().length > 0 && length >= MIN_LENGTH && !submitting;
@@ -24,19 +25,14 @@ export default function NewProjectPage() {
     if (!canSubmit) return;
     setSubmitting(true);
     setError(null);
-    setNotice(null);
     try {
       const project = await createProject({
         name: name.trim(),
         requirement_text: text.trim(),
       });
-      setNotice(`Project "${project.name}" created.`);
-      setName("");
-      setText("");
-      await refresh();
+      navigate(`/projects/${project.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
       setSubmitting(false);
     }
   }
@@ -75,7 +71,6 @@ export default function NewProjectPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <span className="text-sm text-violet-100" role={error ? "alert" : undefined}>
               {error ??
-                notice ??
                 (length < MIN_LENGTH
                   ? `At least ${MIN_LENGTH} characters needed (${length}/${MIN_LENGTH})`
                   : "")}
@@ -104,13 +99,14 @@ export default function NewProjectPage() {
         )}
         <div className="mt-4 divide-y divide-slate-100">
           {projects?.map((project) => (
-            <div
+            <Link
               key={project.id}
-              className="flex flex-wrap items-center justify-between gap-3 py-4"
+              to={`/projects/${project.id}`}
+              className="flex flex-wrap items-center justify-between gap-3 py-4 hover:bg-slate-50"
             >
               <span className="font-semibold">{project.name}</span>
               <Badge value={project.status} />
-            </div>
+            </Link>
           ))}
         </div>
       </section>
