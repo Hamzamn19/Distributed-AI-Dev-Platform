@@ -13,9 +13,9 @@
     "name": "Eray-PC",
     "owner": "Eray",
     "role_hint": "backend",
-    "model": "qwen3:4b",
+    "model": "qwen2.5-coder:7b",
     "provider": "ollama",
-    "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
+    "capabilities": {"coding": 100, "reasoning": 50, "context": 100}
   },
   {
     "agent_id": "agent-can",
