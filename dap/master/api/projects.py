@@ -94,13 +94,6 @@ def assign_project(project_id: str) -> list[Task]:
         raise HTTPException(status_code=409, detail="Project has no tasks; decompose it first")
 
     agents = repositories.list_agents()
-    active = {TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS}
-    queue: dict[str, int] = {}
-    for project in repositories.list_projects():
-        for task in repositories.list_tasks(project.id):
-            if task.status in active and task.assigned_agent_id:
-                queue[task.assigned_agent_id] = queue.get(task.assigned_agent_id, 0) + 1
-
     by_id = {task.id: task for task in tasks}
     done: set[str] = set()
     ordered: list[Task] = []
@@ -120,10 +113,9 @@ def assign_project(project_id: str) -> list[Task]:
     for task in ordered:
         if task.status != TaskStatus.PENDING:
             continue
-        choice = selector.select_agent(task, agents, queue)
+        choice = selector.select_agent(task, agents)
         if choice is None:
             continue
         agent, reason = choice
         repositories.assign_task(task.id, agent.agent_id, reason)
-        queue[agent.agent_id] = queue.get(agent.agent_id, 0) + 1
     return repositories.list_tasks(project_id)

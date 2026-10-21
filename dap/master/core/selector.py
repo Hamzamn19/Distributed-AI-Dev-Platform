@@ -1,8 +1,8 @@
 """Agent selection: scores the agents for one task (contract section 8).
 
-Owner: Baran - card S2-02.
+Owner: Baran - cards S2-01, S2-02.
 
-    select_agent(task, agents, queue=None) -> (agent, reason) | None
+    select_agent(task, agents) -> (agent, reason) | None
 
     S = w_c * C + w_r * R + w_x * X + 10 * u - 15 * q
 
@@ -10,11 +10,13 @@ The highest S wins. On a tie the agent whose role_hint equals the task type
 wins, then the smaller agent_id. Offline agents are not candidates; with no
 candidate None is returned and the task stays pending.
 
-This module has no database access: the caller passes q (number of "assigned"
-or "in_progress" tasks per agent_id) in `queue`.
+`q` (contract section 8) comes from the repository: the number of the agent's
+tasks with status assigned or in_progress. This module calls repository
+functions only - no SQL or database session.
 """
 
-from dap.shared.enums import AgentStatus, TaskType
+from dap.master.db import repositories
+from dap.shared.enums import AgentStatus, TaskStatus, TaskType
 from dap.shared.schemas import Agent, Task
 
 ROLE_BONUS = 10
@@ -50,10 +52,19 @@ def score(task: Task, agent: Agent, queued: int = 0) -> tuple[float, str]:
     return total, reason
 
 
-def select_agent(
-    task: Task, agents: list[Agent], queue: dict[str, int] | None = None
-) -> tuple[Agent, str] | None:
-    queue = queue or {}
+def _queue_counts() -> dict[str, int]:
+    """`q` per agent: its tasks with status assigned or in_progress (section 8)."""
+    active = {TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS}
+    counts: dict[str, int] = {}
+    for project in repositories.list_projects():
+        for task in repositories.list_tasks(project.id):
+            if task.status in active and task.assigned_agent_id:
+                counts[task.assigned_agent_id] = counts.get(task.assigned_agent_id, 0) + 1
+    return counts
+
+
+def select_agent(task: Task, agents: list[Agent]) -> tuple[Agent, str] | None:
+    queue = _queue_counts()
     best: tuple[Agent, float, str] | None = None
     for agent in agents:
         if agent.status == AgentStatus.OFFLINE:
