@@ -50,7 +50,9 @@ def registration():
 
 
 def test_import_initializes_all_tables():
-    assert set(inspect(database.engine).get_table_names()) == {"agents", "projects", "tasks"}
+    assert set(inspect(database.engine).get_table_names()) == {
+        "agents", "projects", "tasks", "events", "task_results"
+    }
     with database.engine.connect() as connection:
         assert connection.exec_driver_sql("PRAGMA foreign_keys").scalar_one() == 1
 
@@ -265,6 +267,69 @@ def test_failed_task_batch_rolls_back_every_insert(store, project_data):
     assert repositories.get_task(new_task.id) is None
     assert [task.id for task in repositories.list_tasks(project.id)] == [existing.id]
     assert repositories.create_tasks(project.id, [new_task])[0].id == new_task.id
+
+
+def test_task_id_collision_across_projects_preserves_existing_assignment(
+    store, project_data, registration
+):
+    agent = repositories.upsert_agent(registration)
+    first_project = repositories.create_project(project_data)
+    second_project = repositories.create_project(project_data)
+    original = task_data()
+    repositories.create_tasks(first_project.id, [original])
+    assigned = repositories.assign_task(original.id, agent.agent_id, "Original assignment")
+    unrelated = task_data(TaskType.TESTING)
+    second_tasks = repositories.create_tasks(second_project.id, [unrelated])
+    new_task = task_data()
+    collision = original.model_copy(update={"title": "Conflicting task from another project"})
+
+    with pytest.raises(IntegrityError):
+        repositories.create_tasks(second_project.id, [new_task, collision])
+
+    assert repositories.get_task(original.id) == assigned
+    assert repositories.list_tasks(first_project.id) == [assigned]
+    assert repositories.list_tasks(second_project.id) == second_tasks
+    assert repositories.get_task(new_task.id) is None
+    assert repositories.get_project(first_project.id) == first_project
+    assert repositories.get_project(second_project.id) == second_project
+    assert repositories.create_tasks(second_project.id, [new_task])[0].id == new_task.id
+
+
+def test_assignment_preserves_task_content_dependencies_and_other_records(
+    store, project_data, registration
+):
+    agent = repositories.upsert_agent(registration)
+    project = repositories.create_project(project_data)
+    dependency = task_data(TaskType.DATABASE)
+    dependent = task_data(TaskType.BACKEND, depends_on=[dependency.id])
+    original_dependency, original_task = repositories.create_tasks(
+        project.id, [dependency, dependent]
+    )
+
+    assigned = repositories.assign_task(original_task.id, agent.agent_id, "Capability match")
+
+    assert assigned.status == TaskStatus.ASSIGNED
+    assert assigned.assigned_agent_id == agent.agent_id
+    assert assigned.assignment_reason == "Capability match"
+    assert assigned.updated_at >= original_task.updated_at
+    unchanged_fields = {
+        "id", "project_id", "title", "description", "type", "depends_on", "attempt", "created_at"
+    }
+    assert assigned.model_dump(include=unchanged_fields) == original_task.model_dump(
+        include=unchanged_fields
+    )
+    assert repositories.get_task(original_dependency.id) == original_dependency
+    assert repositories.get_agent(agent.agent_id) == agent
+    assert repositories.get_project(project.id) == project
+
+    with pytest.raises(ValueError):
+        repositories.assign_task(original_task.id, "unknown-agent", "Invalid replacement")
+
+    assert repositories.get_task(original_task.id) == assigned
+    assert {task.id: task for task in repositories.list_tasks(project.id)} == {
+        original_dependency.id: original_dependency,
+        assigned.id: assigned,
+    }
 
 
 @pytest.mark.parametrize("table,field", [("projects", "status"), ("tasks", "status"), ("tasks", "type")])

@@ -1,4 +1,4 @@
-"""S1-09 tables, matching PROJECT_CONTRACT.md section 8.
+"""S1-09 / S2-05 tables, based on PROJECT_CONTRACT.md section 8.
 
 agents: agent_id, name, owner, role_hint, model, provider, cap_coding,
         cap_reasoning, cap_context, status, current_task_id, registered_at,
@@ -6,14 +6,18 @@ agents: agent_id, name, owner, role_hint, model, provider, cap_coding,
 projects: id, name, requirement_text, status, created_at, updated_at.
 tasks: id, project_id, title, description, type, status, depends_on,
        assigned_agent_id, assignment_reason, attempt, created_at, updated_at.
+events: id, project_id, task_id, agent_id, type, message, created_at.
+task_results: id, task_id, agent_id, success, summary, files, error,
+              duration_ms, tokens_used, created_at.
 
 Enum values are imported from dap.shared.enums. Timestamps are UTC; SQLite
 reads them without timezone information, which repositories restore.
 """
 
-from datetime import datetime
+from datetime import datetime, timezone
+from uuid import uuid4
 
-from sqlalchemy import JSON, CheckConstraint, DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import Boolean, JSON, CheckConstraint, DateTime, Enum, ForeignKey, Integer, String, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from dap.master.db.database import Base
@@ -81,3 +85,43 @@ class TaskModel(Base):
     attempt: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+
+
+class EventModel(Base):
+    """Platform history; agent-only events need no project or task."""
+
+    __tablename__ = "events"
+
+    id: Mapped[str] = mapped_column(String, primary_key=True, default=lambda: str(uuid4()))
+    project_id: Mapped[str | None] = mapped_column(ForeignKey("projects.id"), index=True)
+    task_id: Mapped[str | None] = mapped_column(ForeignKey("tasks.id"), index=True)
+    agent_id: Mapped[str | None] = mapped_column(ForeignKey("agents.agent_id"))
+    type: Mapped[str] = mapped_column(String)
+    message: Mapped[str] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+
+class TaskResultModel(Base):
+    """Result payload; file contents remain recoverable from SQLite."""
+
+    __tablename__ = "task_results"
+    __table_args__ = (
+        CheckConstraint("duration_ms >= 0", name="result_duration_nonnegative"),
+        CheckConstraint("tokens_used >= 0", name="result_tokens_nonnegative"),
+        CheckConstraint("success IN (0, 1)", name="result_success_boolean"),
+    )
+
+    id: Mapped[str] = mapped_column(String, primary_key=True)
+    task_id: Mapped[str] = mapped_column(ForeignKey("tasks.id"), index=True)
+    agent_id: Mapped[str] = mapped_column(ForeignKey("agents.agent_id"))
+    success: Mapped[bool] = mapped_column(Boolean)
+    summary: Mapped[str] = mapped_column(Text)
+    files: Mapped[list[dict[str, str]]] = mapped_column(JSON, default=list)
+    error: Mapped[str | None] = mapped_column(Text)
+    duration_ms: Mapped[int] = mapped_column(Integer)
+    tokens_used: Mapped[int] = mapped_column(Integer)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )

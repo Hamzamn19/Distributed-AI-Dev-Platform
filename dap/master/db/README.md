@@ -1,18 +1,28 @@
 # Master database (S1-09, S2-05)
 
-Owner: Can. This package stores the platform's agents, projects and tasks.
+Owner: Can. This package stores agents, projects, tasks, events and task results.
 It follows `docs/contracts/PROJECT_CONTRACT.md`; API/core code calls repository
 functions and does not handle SQLAlchemy sessions directly.
 
 ## Status
 
-- `database.py`, the three ORM tables and all 13 repository functions are implemented.
-- 21 database tests cover registration, heartbeats, projects/tasks, assignment,
+- `database.py`, five ORM tables and all 13 original repository functions are implemented.
+- 23 database tests cover registration, heartbeats, projects/tasks, assignment,
   constraints, atomic rollback and persistence across separate processes.
 - S2-05 agent/project checks additionally verify busy-agent re-registration,
   refreshed heartbeats preventing stale detection, and isolated project status updates.
+- S2-05 task checks also cover cross-project task ID collisions with atomic rollback,
+  assignment preserving task content/dependencies, and failed assignment preserving existing data.
 - `docs/database.md` contains the ER diagram and sample queries.
 - Master API wiring belongs to Baran and is not changed by this card.
+- `workspace.py` saves generated text files by project/run, with 16 storage tests.
+  Can selected `workspace/<project_id>/<run_id>/` on 21 October; this local
+  increment is connected to the local result helper, but not Master result endpoints.
+  See [WORKSPACE.md](WORKSPACE.md) for retry behavior and integration requirements.
+- `results.py` records results, files, final task status and completion/failure events.
+  Its 17 tests cover idempotent delivery, rollback, constraints, and process restart.
+  The additive interfaces and event types are local integration proposals; see
+  [RESULTS.md](RESULTS.md). Existing shared payloads/endpoints are unchanged.
 
 ## Setup and run
 
