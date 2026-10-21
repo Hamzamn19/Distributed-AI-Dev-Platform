@@ -27,4 +27,6 @@ Open http://localhost:5173.
 ## Status
 
 Sprint 2 (S2-06): agents page, new-project form and task board are finished and
-use sample data (`src/api/mock.ts`, "Sample data" badge). When S2-01 is in main, `client.ts` switches to the real API and `mock.ts` is deleted.
+use sample data (agents/projects in `src/api/mock.ts`, tasks inline in
+`src/api/client.ts`, "Sample data" badge). When the real API is wired
+(`USING_MOCK = false`), `mock.ts` is deleted.

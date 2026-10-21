@@ -33,6 +33,7 @@ export default function NewProjectPage() {
       navigate(`/projects/${project.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
+    } finally {
       setSubmitting(false);
     }
   }
