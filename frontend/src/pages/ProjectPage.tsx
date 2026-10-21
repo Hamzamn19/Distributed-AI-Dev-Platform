@@ -41,7 +41,7 @@ export default function ProjectPage() {
   }
 
   if (loading) return <p className="text-slate-500">Loading project...</p>;
-  if (error || !data) {
+  if (!data) {
     return (
       <p role="alert" className="text-red-700">
         Could not load project: {error}{" "}
@@ -113,6 +113,11 @@ export default function ProjectPage() {
             {busy === "assign" ? "Assigning..." : "Assign agents"}
           </button>
         </div>
+        {error && (
+          <p role="alert" className="mt-3 text-amber-700">
+            Could not refresh: {error}
+          </p>
+        )}
         {actionError && (
           <p role="alert" className="mt-3 text-red-700">
             {actionError}

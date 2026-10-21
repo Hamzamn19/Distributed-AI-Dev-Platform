@@ -79,6 +79,9 @@ export async function getTasks(id: string): Promise<Task[]> {
 
 export async function decomposeProject(id: string): Promise<Task[]> {
   await delay();
+  // Contract: decompose on a project that already has tasks returns them.
+  const existing = tasks.filter((t) => t.project_id === id);
+  if (existing.length > 0) return existing;
   const project = findProject(id);
   const sample: { title: string; type: TaskType; deps: number[] }[] = [
     { title: "Design database schema", type: "database", deps: [] },
@@ -86,9 +89,6 @@ export async function decomposeProject(id: string): Promise<Task[]> {
     { title: "Build web pages", type: "frontend", deps: [1] },
     { title: "Write tests", type: "testing", deps: [1, 2] },
   ];
-  for (let i = tasks.length - 1; i >= 0; i--) {
-    if (tasks[i].project_id === id) tasks.splice(i, 1);
-  }
   const now = stamp();
   const created: Task[] = sample.map((s, i) => ({
     id: `${id}-task-${i + 1}`,
@@ -115,7 +115,9 @@ export async function assignProject(id: string): Promise<Task[]> {
   const projectTasks = tasks.filter((t) => t.project_id === id);
   if (projectTasks.length === 0) throw new Error("Decompose the project first");
   for (const task of projectTasks) {
-    const agent = mockAgents.find((a) => a.role_hint === task.type) ?? mockAgents[0];
+    // Contract: no candidate with a matching role hint -> the task stays pending.
+    const agent = mockAgents.find((a) => a.role_hint === task.type);
+    if (!agent) continue;
     task.assigned_agent_id = agent.agent_id;
     task.assignment_reason = `Role hint "${agent.role_hint}" matches task type "${task.type}"; coding score ${agent.capabilities.coding}`;
     task.status = "assigned";
