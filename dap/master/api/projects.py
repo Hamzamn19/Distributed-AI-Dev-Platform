@@ -2,7 +2,7 @@
 
 Owner: Baran - cards S1-05 and S1-06.
 
-Endpoints to add (paths are relative to /api/v1, see docs/PROJECT_CONTRACT.md):
+Endpoints to add (paths are relative to /api/v1, see docs/contracts/PROJECT_CONTRACT.md):
 
     POST /projects                 body ProjectCreate -> 201 Project      (S1-05)
         A missing or too short requirement_text gives 422 automatically.
@@ -28,6 +28,7 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from dap.master.config import get_settings
 from dap.master.core import decomposer, selector
 from dap.master.db import repositories
 from dap.shared.enums import ProjectStatus, TaskStatus
@@ -93,6 +94,8 @@ def assign_project(project_id: str) -> list[Task]:
     if not tasks:
         raise HTTPException(status_code=409, detail="Project has no tasks; decompose it first")
 
+    # An agent without a recent heartbeat must not get work (contract section 8).
+    repositories.mark_stale_agents_offline(get_settings().heartbeat_timeout_sec)
     agents = repositories.list_agents()
     by_id = {task.id: task for task in tasks}
     done: set[str] = set()
