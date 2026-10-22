@@ -7,7 +7,7 @@ React + TypeScript + Vite + Tailwind CSS web interface for the master API.
 | Path | Page |
 | --- | --- |
 | `/` | New project form and list of existing projects |
-| `/projects/:id` | Project status, Decompose / Assign agents buttons, task board |
+| `/projects/:id` | Project status, Decompose / Assign agents / Run on agents buttons, task board with agent and model |
 | `/agents` | Registered agents: name, owner, model, role hint, scores, status |
 
 The project and agents pages refresh every 3 seconds. All API calls live in `src/api/client.ts`;
@@ -40,5 +40,6 @@ npm run dev            # http://localhost:5173, /api is forwarded to the master 
 
 ## Status
 
-Sprint 3 (phase 1): every page uses the real API; the sample data is gone. The UI is
-served by the master at `/`.
+Sprint 3: every page uses the real API; the UI is served by the master at `/`.
+"Run on agents" sends the tasks to the workers; the task board shows each task's live
+status and the agent with its model, and the Agents page shows a working agent as busy.

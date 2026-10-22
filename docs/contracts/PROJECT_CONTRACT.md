@@ -119,6 +119,7 @@ written in code. Added in Sprint 3:
 | `TASK_TIMEOUT_SEC` | master | `900` | A task not finished after this is marked `failed` |
 | `A2A_POLL_INTERVAL_SEC` | master | `3` | How often the master asks a worker for task status |
 | `LLM_TIMEOUT_SEC` | both | `120` | Seconds to wait for one model answer; use 600 on worker PCs |
+| `MOCK_DELAY_SEC` | worker | `0` | With `LLM_MOCK=1`: seconds a mock task takes (demos show the agent busy) |
 | `VITE_API_BASE_URL` | frontend | empty | Empty means the relative `/api/v1`; set only for unusual setups |
 
 `POLL_INTERVAL_SEC` is no longer used.

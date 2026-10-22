@@ -66,3 +66,8 @@ export function decomposeProject(id: string): Promise<Task[]> {
 export function assignProject(id: string): Promise<Task[]> {
   return request<Task[]>(`/projects/${id}/assign`, { method: "POST" });
 }
+
+// Sends the assigned tasks to the workers (A2A); the master answers 202 at once.
+export function runProject(id: string): Promise<Project> {
+  return request<Project>(`/projects/${id}/run`, { method: "POST" });
+}

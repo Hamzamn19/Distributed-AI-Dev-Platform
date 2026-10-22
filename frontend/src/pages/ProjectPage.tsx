@@ -6,6 +6,7 @@ import {
   getAgents,
   getProject,
   getTasks,
+  runProject,
 } from "../api/client";
 import type { Task } from "../api/types";
 import Badge from "../components/Badge";
@@ -14,7 +15,7 @@ import { usePolling } from "../hooks/usePolling";
 
 export default function ProjectPage() {
   const { id = "" } = useParams();
-  const [busy, setBusy] = useState<"decompose" | "assign" | null>(null);
+  const [busy, setBusy] = useState<"decompose" | "assign" | "run" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -27,11 +28,12 @@ export default function ProjectPage() {
   }, [id]);
   const { data, error, loading, refresh } = usePolling(load);
 
-  async function run(kind: "decompose" | "assign") {
+  async function run(kind: "decompose" | "assign" | "run") {
     setBusy(kind);
     setActionError(null);
+    const action = { decompose: decomposeProject, assign: assignProject, run: runProject }[kind];
     try {
-      await (kind === "decompose" ? decomposeProject(id) : assignProject(id));
+      await action(id);
       await refresh();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
@@ -55,9 +57,15 @@ export default function ProjectPage() {
   const { project, tasks, agents } = data;
   const hasTasks = tasks.length > 0;
   const hasAssignments = tasks.some((t) => t.assigned_agent_id);
+  const running = tasks.some((t) => t.status === "in_progress");
+  const finished = hasTasks && tasks.every((t) => t.status === "completed" || t.status === "failed");
 
-  const agentName = (agentId: string | null) =>
-    agentId ? (agents.find((a) => a.agent_id === agentId)?.name ?? agentId) : "-";
+  // Name and model of the agent, so the page shows which model did the task.
+  const agentName = (agentId: string | null) => {
+    if (!agentId) return "-";
+    const agent = agents.find((a) => a.agent_id === agentId);
+    return agent ? `${agent.name} · ${agent.model}` : agentId;
+  };
   const dependsOn = (task: Task) =>
     task.depends_on.length
       ? task.depends_on.map((d) => tasks.find((t) => t.id === d)?.title ?? d).join(", ")
@@ -67,6 +75,7 @@ export default function ProjectPage() {
     { label: "Requirement", done: true },
     { label: "Master", done: hasTasks },
     { label: "Tasks", done: hasAssignments },
+    { label: "Agents", done: finished },
   ];
 
   return (
@@ -111,6 +120,13 @@ export default function ProjectPage() {
             className="rounded-xl border border-violet-700 px-5 py-3 font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
           >
             {busy === "assign" ? "Assigning..." : "Assign agents"}
+          </button>
+          <button
+            onClick={() => run("run")}
+            disabled={busy !== null || !hasAssignments || running}
+            className="rounded-xl bg-emerald-700 px-5 py-3 font-semibold text-white hover:bg-emerald-800 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy === "run" ? "Starting..." : running ? "Running on agents..." : "Run on agents"}
           </button>
         </div>
         {error && (

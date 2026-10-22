@@ -9,6 +9,8 @@ TASK_STATE_FAILED with a message that explains it.
 
 With LLM_MOCK=1 no model is asked: every target file gets a fixed, working
 content (MOCK_FILES), so the whole flow can be tested without Ollama.
+MOCK_DELAY_SEC (default 0) makes a mock task take that long, so a demo can
+show the agent as busy.
 """
 
 import json
@@ -76,6 +78,7 @@ def check_output(payload: DapTaskPayload, output: DapTaskOutput) -> None:
 def execute(payload: DapTaskPayload) -> DapTaskOutput:
     """Do one task with the local model (or the mock) and return its files."""
     if os.getenv("LLM_MOCK", "0").strip() == "1":
+        time.sleep(float(os.getenv("MOCK_DELAY_SEC", "0")))
         files = [GeneratedFile(path=path, content=MOCK_FILES.get(path, f"# {path}\n"))
                  for path in payload.target_files]
         return DapTaskOutput(summary=f"Mock output for: {payload.title}", files=files)
