@@ -1,21 +1,22 @@
 """Shared data models (Pydantic v2): the shapes that travel between modules.
 
-Rules (docs/PROJECT_CONTRACT.md):
+Rules (docs/contracts/PROJECT_CONTRACT.md):
 - Field names are snake_case everywhere, including the frontend.
 - Project and task ids are UUID4 strings created by the master.
 - Time fields end with "_at", are timezone-aware UTC and serialize as ISO 8601.
 - A field without a value is sent as null, never left out.
 - Unknown fields are rejected, so a misspelled field name fails loudly.
 
-Do not change a field without updating docs/PROJECT_CONTRACT.md first.
+Do not change a field without updating docs/contracts/PROJECT_CONTRACT.md first.
 """
 
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
 
 from dap.shared.enums import AgentStatus, ProjectStatus, TaskStatus, TaskType
 
-# Shortest requirement text the master accepts (shorter gives HTTP 422).
+# Shortest and longest requirement text the master accepts (outside gives HTTP 422).
 MIN_REQUIREMENT_LENGTH = 20
+MAX_REQUIREMENT_LENGTH = 12000
 
 
 class ContractModel(BaseModel):
@@ -70,7 +71,9 @@ class ProjectCreate(ContractModel):
     """Body of POST /projects."""
 
     name: str = Field(min_length=1)
-    requirement_text: str = Field(min_length=MIN_REQUIREMENT_LENGTH)
+    requirement_text: str = Field(
+        min_length=MIN_REQUIREMENT_LENGTH, max_length=MAX_REQUIREMENT_LENGTH
+    )
 
 
 class Project(ContractModel):

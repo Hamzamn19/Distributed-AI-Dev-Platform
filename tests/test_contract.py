@@ -1,6 +1,6 @@
 """Contract tests: fail when someone changes a shared name or value by accident.
 
-If one of these fails, do not "fix" the test. Check docs/PROJECT_CONTRACT.md:
+If one of these fails, do not "fix" the test. Check docs/contracts/PROJECT_CONTRACT.md:
 either the code drifted from the contract, or the contract needs a team decision.
 """
 
@@ -116,6 +116,12 @@ def test_utc_datetime_serializes_with_z():
 def test_short_requirement_is_rejected():
     with pytest.raises(ValidationError):
         ProjectCreate(name="Library", requirement_text="too short")
+
+
+def test_requirement_longer_than_12000_characters_is_rejected():
+    ProjectCreate(name="Library", requirement_text="x" * 12000)
+    with pytest.raises(ValidationError):
+        ProjectCreate(name="Library", requirement_text="x" * 12001)
 
 
 def test_capability_scores_stay_between_0_and_100():

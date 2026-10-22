@@ -1,6 +1,6 @@
 """Shared enum values: the single source of truth for master, worker and database.
 
-Do not rename, add or remove a value without updating docs/PROJECT_CONTRACT.md
+Do not rename, add or remove a value without updating docs/contracts/PROJECT_CONTRACT.md
 first. The frontend mirrors these values in frontend/src/api/types.ts.
 """
 
