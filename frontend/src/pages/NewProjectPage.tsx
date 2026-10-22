@@ -5,7 +5,9 @@ import { createProject, getProjects } from "../api/client";
 import Badge from "../components/Badge";
 import { usePolling } from "../hooks/usePolling";
 
+// Same limits as the master (dap/shared/schemas.py).
 const MIN_LENGTH = 20;
+const MAX_LENGTH = 12000;
 
 export default function NewProjectPage() {
   const navigate = useNavigate();
@@ -18,7 +20,8 @@ export default function NewProjectPage() {
   const { data: projects, error: listError, loading } = usePolling(loadProjects);
 
   const length = text.trim().length;
-  const canSubmit = name.trim().length > 0 && length >= MIN_LENGTH && !submitting;
+  const canSubmit =
+    name.trim().length > 0 && length >= MIN_LENGTH && length <= MAX_LENGTH && !submitting;
 
   async function handleSubmit(event: FormEvent) {
     event.preventDefault();
@@ -74,7 +77,9 @@ export default function NewProjectPage() {
               {error ??
                 (length < MIN_LENGTH
                   ? `At least ${MIN_LENGTH} characters needed (${length}/${MIN_LENGTH})`
-                  : "")}
+                  : length > MAX_LENGTH
+                    ? `Too long: ${length}/${MAX_LENGTH} characters. Split the document into parts.`
+                    : `${length}/${MAX_LENGTH} characters`)}
             </span>
             <button
               type="submit"
@@ -99,7 +104,7 @@ export default function NewProjectPage() {
           <p className="mt-4 text-slate-500">No projects yet.</p>
         )}
         <div className="mt-4 divide-y divide-slate-100">
-          {projects?.map((project) => (
+          {projects?.slice().reverse().map((project) => (
             <Link
               key={project.id}
               to={`/projects/${project.id}`}

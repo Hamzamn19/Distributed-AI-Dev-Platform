@@ -1,127 +1,68 @@
 // All calls to the master API go through this file. Pages never call fetch directly.
-// While USING_MOCK is true, the functions return sample data from mock.ts.
-// When S2-01 is in main: replace each body with request(...) and delete mock.ts.
-import type { Agent, Project, ProjectCreate, Task, TaskType } from "./types";
-import { mockAgents, mockProjects } from "./mock";
+// The UI is served by the master itself (http://<master>:8000), so the API base is
+// relative: "/api/v1". During development Vite proxies /api to the master (vite.config.js).
+// Set VITE_API_BASE_URL only for unusual setups (for example "http://100.x.y.z:8000").
+import type { Agent, Project, ProjectCreate, Task } from "./types";
 
-export const USING_MOCK = true;
+const BASE_URL = `${import.meta.env.VITE_API_BASE_URL || ""}/api/v1`;
 
-const BASE_URL = `${import.meta.env.VITE_API_BASE_URL}/api/v1`;
+// Turns FastAPI's error body into one readable sentence.
+function errorText(status: number, body: unknown): string {
+  const detail = (body as { detail?: unknown } | null)?.detail;
+  if (typeof detail === "string") return detail;
+  if (Array.isArray(detail)) {
+    // 422 validation errors: [{"loc": [...], "msg": "..."}]
+    return detail.map((d) => (d as { msg?: string }).msg ?? String(d)).join("; ");
+  }
+  return `Request failed (${status})`;
+}
 
-// Real request helper: throws an Error with the body's `detail` text on failure.
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
-  const response = await fetch(`${BASE_URL}${path}`, {
-    headers: { "Content-Type": "application/json" },
-    ...init,
-  });
+  let response: Response;
+  try {
+    response = await fetch(`${BASE_URL}${path}`, {
+      headers: { "Content-Type": "application/json" },
+      ...init,
+    });
+  } catch {
+    throw new Error("Cannot reach the master. Is it running?");
+  }
   if (!response.ok) {
-    let detail = `Request failed (${response.status})`;
+    let body: unknown = null;
     try {
-      const body = await response.json();
-      if (typeof body.detail === "string") detail = body.detail;
+      body = await response.json();
     } catch {
-      // keep the default message
+      // keep body null
     }
-    throw new Error(detail);
+    throw new Error(errorText(response.status, body));
   }
   return response.json() as Promise<T>;
 }
 
-// ---- mock state (removed together with mock.ts) ----
-const projects = [...mockProjects];
-const tasks: Task[] = [];
-const delay = () => new Promise((resolve) => setTimeout(resolve, 300));
-const stamp = () => new Date().toISOString();
-
-function findProject(id: string): Project {
-  const project = projects.find((p) => p.id === id);
-  if (!project) throw new Error("Project not found");
-  return project;
+export function getAgents(): Promise<Agent[]> {
+  return request<Agent[]>("/agents");
 }
 
-export async function getAgents(): Promise<Agent[]> {
-  await delay();
-  return mockAgents;
+export function getProjects(): Promise<Project[]> {
+  return request<Project[]>("/projects");
 }
 
-export async function getProjects(): Promise<Project[]> {
-  await delay();
-  return [...projects];
+export function createProject(data: ProjectCreate): Promise<Project> {
+  return request<Project>("/projects", { method: "POST", body: JSON.stringify(data) });
 }
 
-export async function createProject(data: ProjectCreate): Promise<Project> {
-  await delay();
-  if (data.requirement_text.length < 20) {
-    throw new Error("Requirement text must be at least 20 characters");
-  }
-  const now = stamp();
-  const project: Project = {
-    id: `project-${projects.length + 1}`,
-    name: data.name,
-    requirement_text: data.requirement_text,
-    status: "created",
-    created_at: now,
-    updated_at: now,
-  };
-  projects.unshift(project);
-  return project;
+export function getProject(id: string): Promise<Project> {
+  return request<Project>(`/projects/${id}`);
 }
 
-export async function getProject(id: string): Promise<Project> {
-  await delay();
-  return findProject(id);
+export function getTasks(id: string): Promise<Task[]> {
+  return request<Task[]>(`/projects/${id}/tasks`);
 }
 
-export async function getTasks(id: string): Promise<Task[]> {
-  await delay();
-  return tasks.filter((t) => t.project_id === id);
+export function decomposeProject(id: string): Promise<Task[]> {
+  return request<Task[]>(`/projects/${id}/decompose`, { method: "POST" });
 }
 
-export async function decomposeProject(id: string): Promise<Task[]> {
-  await delay();
-  // Contract: decompose on a project that already has tasks returns them.
-  const existing = tasks.filter((t) => t.project_id === id);
-  if (existing.length > 0) return existing;
-  const project = findProject(id);
-  const sample: { title: string; type: TaskType; deps: number[] }[] = [
-    { title: "Design database schema", type: "database", deps: [] },
-    { title: "Build REST API", type: "backend", deps: [0] },
-    { title: "Build web pages", type: "frontend", deps: [1] },
-    { title: "Write tests", type: "testing", deps: [1, 2] },
-  ];
-  const now = stamp();
-  const created: Task[] = sample.map((s, i) => ({
-    id: `${id}-task-${i + 1}`,
-    project_id: id,
-    title: s.title,
-    description: "",
-    type: s.type,
-    status: "pending",
-    depends_on: s.deps.map((d) => `${id}-task-${d + 1}`),
-    assigned_agent_id: null,
-    assignment_reason: null,
-    attempt: 0,
-    created_at: now,
-    updated_at: now,
-  }));
-  tasks.push(...created);
-  project.status = "in_progress";
-  project.updated_at = now;
-  return created;
-}
-
-export async function assignProject(id: string): Promise<Task[]> {
-  await delay();
-  const projectTasks = tasks.filter((t) => t.project_id === id);
-  if (projectTasks.length === 0) throw new Error("Decompose the project first");
-  for (const task of projectTasks) {
-    // Contract: no candidate with a matching role hint -> the task stays pending.
-    const agent = mockAgents.find((a) => a.role_hint === task.type);
-    if (!agent) continue;
-    task.assigned_agent_id = agent.agent_id;
-    task.assignment_reason = `Role hint "${agent.role_hint}" matches task type "${task.type}"; coding score ${agent.capabilities.coding}`;
-    task.status = "assigned";
-    task.updated_at = stamp();
-  }
-  return projectTasks;
+export function assignProject(id: string): Promise<Task[]> {
+  return request<Task[]>(`/projects/${id}/assign`, { method: "POST" });
 }

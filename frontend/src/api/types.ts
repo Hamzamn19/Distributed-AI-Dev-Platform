@@ -1,6 +1,6 @@
 // Mirror of dap/shared/enums.py and dap/shared/schemas.py.
 // Field names stay snake_case: do not convert them to camelCase.
-// Change this file only together with docs/PROJECT_CONTRACT.md.
+// Change this file only together with docs/contracts/PROJECT_CONTRACT.md.
 
 export type AgentStatus = "idle" | "busy" | "offline";
 
@@ -51,7 +51,7 @@ export interface Agent {
 
 export interface ProjectCreate {
   name: string;
-  requirement_text: string; // at least 20 characters, otherwise HTTP 422
+  requirement_text: string; // 20 to 12 000 characters, otherwise HTTP 422
 }
 
 export interface Project {
