@@ -44,3 +44,10 @@ def test_unreachable_model_raises_runtime_error(monkeypatch):
     with pytest.raises(RuntimeError, match="127.0.0.1:9"):
         llm_client.chat(MESSAGES)
     assert llm_client.health_check() is False
+
+
+def test_timeout_comes_from_llm_timeout_sec(monkeypatch):
+    monkeypatch.delenv("LLM_TIMEOUT_SEC", raising=False)
+    assert llm_client._timeout_sec() == 120
+    monkeypatch.setenv("LLM_TIMEOUT_SEC", "600")
+    assert llm_client._timeout_sec() == 600

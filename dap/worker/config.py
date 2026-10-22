@@ -1,14 +1,27 @@
-"""Worker settings. Every value comes from the environment (.env), never from code."""
+"""Worker settings. Every value comes from the environment (.env), never from code.
+
+dap.worker.main calls load_env() first: it reads .env, or the file given with
+--env-file instead (so two workers can run on one PC with .env.worker1/.env.worker2).
+"""
 
 import os
 from dataclasses import dataclass
+from pathlib import Path
 
 from dotenv import load_dotenv
 
 from dap.shared.enums import TaskType
 from dap.shared.schemas import AgentRegister, Capabilities
 
-load_dotenv()
+
+def load_env(env_file: str | None = None) -> None:
+    """Load .env, or env_file instead; values in env_file win over the environment."""
+    if env_file is None:
+        load_dotenv()
+        return
+    if not Path(env_file).is_file():
+        raise SystemExit(f"Env file not found: {env_file}")
+    load_dotenv(env_file, override=True)
 
 
 @dataclass(frozen=True)
@@ -25,7 +38,6 @@ class WorkerSettings:
     cap_reasoning: int
     cap_context: int
     heartbeat_interval_sec: int
-    poll_interval_sec: int
 
     @property
     def api_url(self) -> str:
@@ -64,5 +76,4 @@ def get_settings() -> WorkerSettings:
         cap_reasoning=int(os.getenv("AGENT_CAP_REASONING", "50")),
         cap_context=int(os.getenv("AGENT_CAP_CONTEXT", "50")),
         heartbeat_interval_sec=int(os.getenv("HEARTBEAT_INTERVAL_SEC", "10")),
-        poll_interval_sec=int(os.getenv("POLL_INTERVAL_SEC", "3")),
     )

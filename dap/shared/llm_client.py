@@ -7,6 +7,7 @@ Talks to a local model (Ollama) through the OpenAI-compatible
     LLM_API_KEY    any non-empty text for Ollama, for example "ollama"
     LLM_MODEL      for example qwen3:4b
     LLM_MOCK       1 = no model call, return a fixed valid answer
+    LLM_TIMEOUT_SEC  seconds to wait for one answer (default 120; 600 on worker PCs)
 
 Contract (docs/contracts/PROJECT_CONTRACT.md, section 8):
 
@@ -28,7 +29,7 @@ from dap.shared.schemas import LLMResponse
 
 load_dotenv()
 
-TIMEOUT_SEC = 120
+DEFAULT_TIMEOUT_SEC = 120
 ATTEMPTS = 2  # first try + one retry
 
 MOCK_TEXT = "mock response"
@@ -88,9 +89,13 @@ def strip_think(text: str) -> str:
     return _THINK_BLOCK.sub("", text).strip()
 
 
+def _timeout_sec() -> float:
+    return float(os.getenv("LLM_TIMEOUT_SEC", str(DEFAULT_TIMEOUT_SEC)))
+
+
 def _client(base_url: str, api_key: str) -> OpenAI:
     # The openai package retries by itself; we do our own single retry instead.
-    return OpenAI(base_url=base_url, api_key=api_key, timeout=TIMEOUT_SEC, max_retries=0)
+    return OpenAI(base_url=base_url, api_key=api_key, timeout=_timeout_sec(), max_retries=0)
 
 
 def chat(
