@@ -12,15 +12,15 @@ unclear.
 | Python 3.11 or newer | everyone | `python --version` |
 | Tailscale | everyone | `tailscale status` |
 | Ollama + one model | the master PC in Sprint 1; the six worker PCs in Sprint 2 | `ollama list` |
-| Node.js LTS | Fatma (frontend) | `node --version` |
+| Node.js LTS | the master PC (builds the web interface) and Fatma | `node --version` |
 
 On Windows, tick "Add Python to PATH" in the Python installer.
 
 ## 2. Get the code
 
 ```bash
-git clone https://github.com/<owner>/distributed-agents.git
-cd distributed-agents
+git clone https://github.com/Hamzamn19/Distributed-AI-Dev-Platform.git
+cd Distributed-AI-Dev-Platform
 ```
 
 ## 3. Python environment
@@ -52,18 +52,63 @@ If PowerShell refuses to run `activate`, run this once and try again:
 - Worker PCs: `AGENT_ID`, `AGENT_NAME`, `AGENT_OWNER`, `AGENT_ROLE_HINT`
   (your entry in `docs/agents.json`), and `MASTER_URL`.
 - `LLM_MODEL`: the model installed on this PC.
+- `LLM_MOCK=1` runs everything without Ollama (fixed answers), for a first try.
+- `LLM_TIMEOUT_SEC`: keep 120 on the master; use 600 on worker PCs.
 
 ## 5. Check that it works
 
 ```bash
 pytest
-uvicorn dap.master.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
-Open http://localhost:8000/api/v1/health. You should see
-`{"status":"ok","version":"0.1.0"}`.
+Master PC: build the web interface once (again after every frontend change),
+then start the master. It serves the interface and the API on one address.
 
-## 6. Connect the PCs with Tailscale
+```bash
+cd frontend
+npm install
+npm run build
+cd ..
+python -m dap.master
+```
+
+- http://localhost:8000 shows the web interface.
+- http://localhost:8000/api/v1/health answers `{"status":"ok","version":"0.1.0"}`.
+- http://localhost:8000/docs lists the API.
+
+`uvicorn dap.master.main:app --host 0.0.0.0 --port 8000 --reload` still works too.
+During frontend development, `cd frontend && npm run dev` serves the interface
+with hot reload on http://localhost:5173 and forwards `/api` to the master.
+
+With the master running on `LLM_MOCK=1`, `python scripts/smoke_test.py` checks
+the whole decompose/assign flow and prints `SMOKE TEST PASSED`.
+
+## 6. Start a worker
+
+On a worker PC (or in a second terminal on the master PC):
+
+```bash
+python -m dap.worker.main
+```
+
+It registers with `MASTER_URL` and sends a heartbeat every
+`HEARTBEAT_INTERVAL_SEC`; the Agents page shows it as `idle`. Stop it with Ctrl+C:
+after `HEARTBEAT_TIMEOUT_SEC` (30 s) it shows as `offline`.
+
+Two workers on one PC, for local tests:
+
+```bash
+copy .env.worker.example .env.worker1
+copy .env.worker.example .env.worker2
+# in .env.worker2 change AGENT_ID, AGENT_ROLE_HINT and WORKER_PORT
+python -m dap.worker.main --env-file .env.worker1
+python -m dap.worker.main --env-file .env.worker2
+```
+
+`python scripts/seed_agents.py` registers the six team agents of
+`docs/agents.json` at once (they turn offline after 30 s without a worker).
+
+## 7. Connect the PCs with Tailscale
 
 1. Install Tailscale and sign in with the **shared team account**. (The free
    plan allows 6 users but unlimited devices, so all seven PCs join through
@@ -80,7 +125,7 @@ Backup when Tailscale does not work: on the master PC run
 `https://....trycloudflare.com` address as `MASTER_URL`. The address changes
 every time the tunnel restarts.
 
-## 7. Ollama (master PC)
+## 8. Ollama
 
 ```bash
 ollama pull <model>
@@ -99,3 +144,5 @@ the PC's memory allows.
 | `ModuleNotFoundError: No module named 'dap'` | Run commands from the repository root, with the virtual environment active |
 | `/health` works on the master PC but not from another PC | Check `tailscale status` on both PCs; check the firewall prompt; the master must run with `--host 0.0.0.0` |
 | Worker gets 401 | `AGENT_TOKEN` differs between the two `.env` files |
+| http://localhost:8000 says "Frontend not built" | Run `cd frontend && npm install && npm run build`, then reload |
+| Worker gets `Env file not found` | The `--env-file` path is wrong; run from the repository root |

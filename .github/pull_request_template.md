@@ -13,6 +13,6 @@
 ## Checklist
 
 - [ ] I changed files only in my own folder (or the owner agreed)
-- [ ] Names, paths and values follow `docs/PROJECT_CONTRACT.md`
+- [ ] Names, paths and values follow `docs/contracts/PROJECT_CONTRACT.md`
 - [ ] Settings come from `.env`; no secret is in the code
 - [ ] `pytest` passes

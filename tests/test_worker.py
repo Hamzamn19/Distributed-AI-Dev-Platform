@@ -1,10 +1,8 @@
 """Worker registration and heartbeat against the real master app (no network)."""
 
 import httpx
-from fastapi.testclient import TestClient
 
 from dap.master.db import repositories
-from dap.master.main import app
 from dap.shared.enums import AgentStatus
 from dap.worker import config, main as worker
 
@@ -21,25 +19,6 @@ def _settings(monkeypatch, agent_id: str, token: str | None = None):
     return config.get_settings()
 
 
-_master = TestClient(app)
-
-
-def _master_client() -> httpx.Client:
-    """A real httpx.Client (as the worker uses) whose requests go to the master app.
-
-    TestClient itself is built on httpx2, so its errors are not httpx errors.
-    """
-
-    def forward(request: httpx.Request) -> httpx.Response:
-        answer = _master.request(
-            request.method, request.url.raw_path.decode(),
-            content=request.content, headers=dict(request.headers),
-        )
-        return httpx.Response(answer.status_code, headers=answer.headers, content=answer.content)
-
-    return httpx.Client(base_url="http://testserver", transport=httpx.MockTransport(forward))
-
-
 class StopAfter:
     """A stop event that is set after `rounds` waits."""
 
@@ -53,9 +32,9 @@ class StopAfter:
         self.rounds -= 1
 
 
-def test_register_then_heartbeat(monkeypatch):
+def test_register_then_heartbeat(monkeypatch, master_http):
     settings = _settings(monkeypatch, "worker-test-a")
-    client = _master_client()
+    client = master_http
     worker.register(client, settings)
     assert repositories.get_agent("worker-test-a").status == AgentStatus.IDLE
 
@@ -65,14 +44,14 @@ def test_register_then_heartbeat(monkeypatch):
     assert agent.current_task_id == "task-1"
 
 
-def test_heartbeat_of_unregistered_worker_returns_false(monkeypatch):
+def test_heartbeat_of_unregistered_worker_returns_false(monkeypatch, master_http):
     settings = _settings(monkeypatch, "worker-test-unknown")
-    assert not worker.send_heartbeat(_master_client(), settings, AgentStatus.IDLE, None)
+    assert not worker.send_heartbeat(master_http, settings, AgentStatus.IDLE, None)
 
 
-def test_run_registers_and_registers_again_after_a_404(monkeypatch):
+def test_run_registers_and_registers_again_after_a_404(monkeypatch, master_http):
     settings = _settings(monkeypatch, "worker-test-b")
-    client = _master_client()
+    client = master_http
     calls = []
     original = worker.send_heartbeat
 
@@ -94,10 +73,10 @@ def test_run_registers_and_registers_again_after_a_404(monkeypatch):
     assert len(calls) == 2
 
 
-def test_wrong_token_is_logged_and_does_not_crash(monkeypatch, caplog):
+def test_wrong_token_is_logged_and_does_not_crash(monkeypatch, caplog, master_http):
     settings = _settings(monkeypatch, "worker-test-c", token="wrong-token")
     monkeypatch.setenv("AGENT_TOKEN", "the-master-token")  # the master reads this one
-    worker.run(_master_client(), settings, StopAfter(1))
+    worker.run(master_http, settings, StopAfter(1))
     assert "wrong AGENT_TOKEN" in caplog.text
     assert repositories.get_agent("worker-test-c") is None
 

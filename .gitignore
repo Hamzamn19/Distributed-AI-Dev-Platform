@@ -17,6 +17,9 @@ dist/
 .env
 .env.*
 !.env.example
+# Local worker settings (.env.worker1, .env.worker2); only the example is shared
+.env.worker*
+!.env.worker.example
 
 # Local data
 *.db
