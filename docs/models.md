@@ -1,7 +1,8 @@
 # Models and measured capabilities
 
-Card S2-04 (Issue #24), contract section 10. The scores in `docs/agents.json`
-come from this measurement, not from estimates. A model change means measuring
+Card S2-04 (Issue #24), contract section 10. `docs/agents.json` is the source
+of truth for each agent's model and scores; this page shows the same values.
+A measured score replaces the Sprint 1 estimate; a model change means measuring
 again.
 
 ## Method
@@ -44,11 +45,13 @@ Copy the three `AGENT_CAP_*` lines the script prints into the worker's `.env`.
 
 ## Results
 
-| Agent | Model | coding | reasoning | context | Measured on | Date |
-| --- | --- | --- | --- | --- | --- | --- |
-| agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | Eray-PC | 2026-10-21 |
-| agent-fatma | to be decided | | | | | |
-| agent-can | to be decided | | | | | |
-| agent-abdurrahman | to be decided | | | | | |
-| agent-okan | to be decided | | | | | |
-| agent-hamza | to be decided | | | | | |
+Same values as `docs/agents.json`. "estimate" means the scores were not measured yet.
+
+| Agent | Model | coding | reasoning | context | Scores | Measured on | Date |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| agent-fatma | qwen3:4b | 50 | 50 | 50 | estimate |  |  |
+| agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | measured | Eray-PC | 2026-10-21 |
+| agent-can | qwen3:4b | 50 | 50 | 50 | estimate |  |  |
+| agent-abdurrahman | qwen3:4b | 50 | 50 | 50 | estimate |  |  |
+| agent-okan | qwen3:4b | 60 | 60 | 50 | estimate |  |  |
+| agent-hamza | qwen3:4b | 50 | 50 | 50 | estimate |  |  |
