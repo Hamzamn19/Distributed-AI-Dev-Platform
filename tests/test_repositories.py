@@ -183,6 +183,13 @@ def task_data(task_type=TaskType.DATABASE, depends_on=None):
     )
 
 
+def test_list_tasks_keeps_the_order_of_creation(store, project_data):
+    project = repositories.create_project(project_data)
+    batch = [task_data(task_type) for task_type in
+             (TaskType.DATABASE, TaskType.BACKEND, TaskType.FRONTEND, TaskType.TESTING) * 3]
+    repositories.create_tasks(project.id, batch)
+    assert [task.id for task in repositories.list_tasks(project.id)] == [t.id for t in batch]
+
 def test_project_round_trip_and_status(store, project_data):
     project = repositories.create_project(project_data)
     assert isinstance(project, Project)

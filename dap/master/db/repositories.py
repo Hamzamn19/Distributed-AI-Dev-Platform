@@ -174,7 +174,11 @@ def set_project_status(project_id: str, status: ProjectStatus) -> None:
 
 
 def create_tasks(project_id: str, tasks: list[TaskCreate]) -> list[Task]:
-    """Store a complete batch or roll it back; task IDs come from the master."""
+    """Store a complete batch or roll it back; task IDs come from the master.
+
+    Each task gets a created_at one microsecond after the previous one, so
+    list_tasks returns them in the order the decomposer produced them.
+    """
     now = datetime.now(timezone.utc)
     with SessionLocal.begin() as session:
         if session.get(ProjectModel, project_id) is None:
@@ -191,10 +195,10 @@ def create_tasks(project_id: str, tasks: list[TaskCreate]) -> list[Task]:
                 assigned_agent_id=None,
                 assignment_reason=None,
                 attempt=0,
-                created_at=now,
-                updated_at=now,
+                created_at=now + timedelta(microseconds=position),
+                updated_at=now + timedelta(microseconds=position),
             )
-            for data in tasks
+            for position, data in enumerate(tasks)
         ]
         session.add_all(records)
         session.flush()

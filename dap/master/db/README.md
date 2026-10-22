@@ -57,7 +57,8 @@ Stale detection counts agents that changed to `offline`; an agent with no
 heartbeat is checked against its registration time.
 
 Projects receive UUID4 IDs and initially have status `created`. Tasks retain
-the IDs supplied by the master and initially have status `pending`. A task
+the IDs supplied by the master and initially have status `pending`. `list_tasks`
+returns them in the order they were created. A task
 batch is stored in one transaction, so a duplicate ID rolls back the whole
 batch. Assignment stores the chosen agent, reason and status `assigned`.
 Getters return `None` for missing IDs. Writes that require a missing parent
