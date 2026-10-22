@@ -28,6 +28,7 @@ AGENT_JSON = {
     "current_task_id": None,
     "registered_at": "2026-10-05T18:00:00Z",
     "last_heartbeat_at": "2026-10-05T18:00:10Z",
+    "a2a_url": None,
 }
 
 TASK_JSON = {

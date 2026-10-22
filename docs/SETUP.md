@@ -100,7 +100,7 @@ Two workers on one PC, for local tests:
 ```bash
 copy .env.worker.example .env.worker1
 copy .env.worker.example .env.worker2
-# in .env.worker2 change AGENT_ID, AGENT_ROLE_HINT and WORKER_PORT
+# in .env.worker2 change AGENT_ID, AGENT_ROLE_HINT, WORKER_PORT and WORKER_PUBLIC_URL
 python -m dap.worker.main --env-file .env.worker1
 python -m dap.worker.main --env-file .env.worker2
 ```

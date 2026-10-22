@@ -43,6 +43,7 @@ def _agent(record: AgentModel) -> Agent:
         current_task_id=record.current_task_id,
         registered_at=_utc(record.registered_at),
         last_heartbeat_at=_utc(record.last_heartbeat_at),
+        a2a_url=record.a2a_url,
     )
 
 
@@ -82,7 +83,7 @@ def upsert_agent(data: AgentRegister) -> Agent:
         if record is None:
             record = AgentModel(agent_id=data.agent_id, registered_at=now)
             session.add(record)
-        for field in ("name", "owner", "role_hint", "model", "provider"):
+        for field in ("name", "owner", "role_hint", "model", "provider", "a2a_url"):
             setattr(record, field, getattr(data, field))
         record.cap_coding = data.capabilities.coding
         record.cap_reasoning = data.capabilities.reasoning
@@ -231,6 +232,34 @@ def assign_task(task_id: str, agent_id: str, reason: str) -> Task:
         record.assigned_agent_id = agent_id
         record.assignment_reason = reason
         record.status = TaskStatus.ASSIGNED
+        record.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        return _task(record)
+
+
+def set_task_status(
+    task_id: str, status: TaskStatus, remote_task_id: str | None = None
+) -> Task:
+    """Change a task's status; remote_task_id (the worker's A2A task id) is kept when None."""
+    with SessionLocal.begin() as session:
+        record = session.get(TaskModel, task_id)
+        if record is None:
+            raise ValueError(f"Task {task_id!r} does not exist")
+        record.status = TaskStatus(status)
+        if remote_task_id is not None:
+            record.remote_task_id = remote_task_id
+        record.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        return _task(record)
+
+
+def increment_attempt(task_id: str) -> Task:
+    """Count one more execution attempt of a task (the master calls it before sending)."""
+    with SessionLocal.begin() as session:
+        record = session.get(TaskModel, task_id)
+        if record is None:
+            raise ValueError(f"Task {task_id!r} does not exist")
+        record.attempt += 1
         record.updated_at = datetime.now(timezone.utc)
         session.flush()
         return _task(record)

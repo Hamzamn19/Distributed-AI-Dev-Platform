@@ -51,6 +51,16 @@ def _reject_links(root: Path, relative: Path) -> None:
             raise ValueError(f"Generated file path crosses a filesystem link: {relative}")
 
 
+def check_paths(files: list[GeneratedFile]) -> None:
+    """Raise ValueError for an unsafe or duplicate generated file path; write nothing."""
+    seen: set[str] = set()
+    for file in files:
+        key = _relative_path(file.path).as_posix().casefold()
+        if key in seen:
+            raise ValueError(f"Duplicate generated file path: {file.path!r}")
+        seen.add(key)
+
+
 def save_generated_files(
     project_id: str,
     run_id: str,

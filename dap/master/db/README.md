@@ -7,6 +7,9 @@ functions and does not handle SQLAlchemy sessions directly.
 ## Status
 
 - `database.py`, five ORM tables and all 13 original repository functions are implemented.
+- Sprint 3: `agents.a2a_url`, `tasks.remote_task_id`, `set_task_status`,
+  `increment_attempt`. `init_db()` adds a missing nullable column to an older
+  `data/dap.db` with `ALTER TABLE` (deleting `data/dap.db` also works).
 - 23 database tests cover registration, heartbeats, projects/tasks, assignment,
   constraints, atomic rollback and persistence across separate processes.
 - S2-05 agent/project checks additionally verify busy-agent re-registration,
@@ -15,11 +18,11 @@ functions and does not handle SQLAlchemy sessions directly.
   assignment preserving task content/dependencies, and failed assignment preserving existing data.
 - `docs/database.md` contains the ER diagram and sample queries.
 - Master API wiring belongs to Baran and is not changed by this card.
-- `workspace.py` saves generated text files by project/run, with 16 storage tests.
-  Can selected `workspace/<project_id>/<run_id>/` on 21 October; this local
-  increment is connected to the local result helper, but not Master result endpoints.
-  See [WORKSPACE.md](WORKSPACE.md) for retry behavior and integration requirements.
-- `results.py` records results, files, final task status and completion/failure events.
+- `workspace.py` checks generated file paths (`check_paths`); since Sprint 3 the
+  master's integrator writes the files into `workspace/<project_id>/` (contract
+  section 12), which replaces the earlier `<project_id>/<run_id>/` layout.
+- `results.py` records results (with file contents), final task status and
+  completion/failure events; `list_project_results(project_id)` lists a project's results.
   Its 17 tests cover idempotent delivery, rollback, constraints, and process restart.
   The additive interfaces and event types are local integration proposals; see
   [RESULTS.md](RESULTS.md). Existing shared payloads/endpoints are unchanged.

@@ -6,13 +6,18 @@ Rules (docs/contracts/PROJECT_CONTRACT.md):
 - Time fields end with "_at", are timezone-aware UTC and serialize as ISO 8601.
 - A field without a value is sent as null, never left out.
 - Unknown fields are rejected, so a misspelled field name fails loudly.
+- Exception: the A2A wire models at the end use the protocol's camelCase names
+  and ignore unknown fields, because the A2A specification may add fields.
 
 Do not change a field without updating docs/contracts/PROJECT_CONTRACT.md first.
 """
 
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from typing import Any, Literal
 
-from dap.shared.enums import AgentStatus, ProjectStatus, TaskStatus, TaskType
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field
+from pydantic.alias_generators import to_camel
+
+from dap.shared.enums import A2ATaskState, AgentStatus, ProjectStatus, TaskStatus, TaskType
 
 # Shortest and longest requirement text the master accepts (outside gives HTTP 422).
 MIN_REQUIREMENT_LENGTH = 20
@@ -44,6 +49,8 @@ class AgentRegister(ContractModel):
     model: str
     provider: str = "ollama"
     capabilities: Capabilities
+    # Address of the worker's A2A server, for example http://100.x.y.z:9000 (Sprint 3).
+    a2a_url: str | None = None
 
 
 class Agent(AgentRegister):
@@ -119,7 +126,10 @@ class GeneratedFile(ContractModel):
 
 
 class TaskResult(ContractModel):
-    """Body of POST /tasks/{id}/result (Sprint 3)."""
+    """One stored result of a task (task_results table, GET /projects/{id}/results).
+
+    The master builds it from the DapTaskOutput the worker returns over A2A.
+    """
 
     task_id: str
     agent_id: str
@@ -146,3 +156,129 @@ class LLMResponse(ContractModel):
 class HealthResponse(ContractModel):
     status: str = "ok"
     version: str
+
+
+# --------------------------------------------- task payloads inside A2A messages
+
+
+class DapTaskPayload(ContractModel):
+    """What the master sends a worker: the data part of the A2A message."""
+
+    task_id: str
+    project_id: str
+    type: TaskType
+    title: str
+    description: str
+    requirement_text: str
+    target_files: list[str]
+    # Files of the tasks this one depends on, already completed.
+    dependency_files: list[GeneratedFile] = Field(default_factory=list)
+
+
+class DapTaskOutput(ContractModel):
+    """What a worker returns: the data part of the A2A artifact named "result"."""
+
+    summary: str
+    files: list[GeneratedFile] = Field(default_factory=list)
+    prompt_tokens: int = 0
+    completion_tokens: int = 0
+    duration_ms: int = 0
+
+
+# ------------------------------------- A2A wire models (protocol v1.0, HTTP+JSON)
+
+
+class A2AModel(BaseModel):
+    """camelCase on the wire, unknown fields ignored. Serialize with to_wire()."""
+
+    model_config = ConfigDict(extra="ignore", alias_generator=to_camel, populate_by_name=True)
+
+    def to_wire(self) -> dict:
+        return self.model_dump(mode="json", by_alias=True, exclude_none=True)
+
+
+class AgentInterface(A2AModel):
+    url: str
+    protocol_binding: str = "HTTP+JSON"
+    protocol_version: str = "1.0"
+
+
+class A2ACapabilities(A2AModel):
+    streaming: bool = False
+    push_notifications: bool = False
+
+
+class AgentSkill(A2AModel):
+    id: str
+    name: str
+    description: str
+    tags: list[str] = Field(default_factory=list)
+
+
+class AgentCard(A2AModel):
+    """GET /.well-known/agent-card.json on a worker."""
+
+    name: str
+    description: str
+    version: str
+    supported_interfaces: list[AgentInterface]
+    capabilities: A2ACapabilities = Field(default_factory=A2ACapabilities)
+    default_input_modes: list[str] = Field(default_factory=lambda: ["application/json"])
+    default_output_modes: list[str] = Field(default_factory=lambda: ["application/json"])
+    skills: list[AgentSkill] = Field(default_factory=list)
+
+
+class Part(A2AModel):
+    """Exactly one of text or data is set; the member name tells the kind."""
+
+    text: str | None = None
+    data: Any | None = None
+    media_type: str | None = None
+
+
+def first_data(parts: list[Part]) -> Any | None:
+    """The content of the first data part, or None."""
+    return next((part.data for part in parts if part.data is not None), None)
+
+
+class Message(A2AModel):
+    message_id: str
+    role: Literal["ROLE_USER", "ROLE_AGENT"]
+    context_id: str | None = None
+    parts: list[Part]
+
+
+class TaskStatusA2A(A2AModel):
+    state: A2ATaskState
+    message: Message | None = None  # on failure: a text part with the reason
+    timestamp: AwareDatetime | None = None
+
+
+class Artifact(A2AModel):
+    artifact_id: str
+    name: str | None = None
+    parts: list[Part]
+
+
+class A2ATask(A2AModel):
+    """Body of GET /tasks/{id}; wrapped in "task" in the message:send answer."""
+
+    id: str
+    context_id: str | None = None
+    status: TaskStatusA2A
+    artifacts: list[Artifact] = Field(default_factory=list)
+
+
+class SendMessageConfiguration(A2AModel):
+    return_immediately: bool = False
+
+
+class SendMessageRequest(A2AModel):
+    """Body of POST /message:send on a worker."""
+
+    message: Message
+    configuration: SendMessageConfiguration | None = None
+
+
+class SendMessageResponse(A2AModel):
+    task: A2ATask

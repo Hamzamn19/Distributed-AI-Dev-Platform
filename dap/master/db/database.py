@@ -6,7 +6,7 @@ by dap.master.config; this module never chooses its own database location.
 
 from pathlib import Path
 
-from sqlalchemy import create_engine, event
+from sqlalchemy import create_engine, event, inspect, text
 from sqlalchemy.engine import make_url
 from sqlalchemy.orm import DeclarativeBase, sessionmaker
 
@@ -35,7 +35,23 @@ SessionLocal = sessionmaker(bind=engine, expire_on_commit=False)
 
 
 def init_db() -> None:
-    """Create missing tables; existing records are retained."""
+    """Create missing tables and add missing nullable columns; records are retained."""
     from dap.master.db import models  # Register tables before create_all.
 
     Base.metadata.create_all(engine)
+    _add_missing_columns()
+
+
+def _add_missing_columns() -> None:
+    """No migration tool: a column added in a later sprint (always nullable) is
+    added to an older data/dap.db with ALTER TABLE. Deleting data/dap.db also works."""
+    existing = inspect(engine)
+    with engine.begin() as connection:
+        for table in Base.metadata.sorted_tables:
+            present = {column["name"] for column in existing.get_columns(table.name)}
+            for column in table.columns:
+                if column.name not in present and column.nullable:
+                    kind = column.type.compile(dialect=engine.dialect)
+                    connection.execute(
+                        text(f'ALTER TABLE "{table.name}" ADD COLUMN "{column.name}" {kind}')
+                    )

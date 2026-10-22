@@ -10,6 +10,11 @@ travels with the code. Okan keeps the two in sync.
 Version 1.1 (18 October 2026): adds the Sprint 2 selection formula, the task
 taxonomy, capability measurement and the requirement length limit.
 
+Version 1.2 (Sprint 3): the master serves the web interface and the API on one
+address, and sends tasks to the workers over A2A (section 13). The planned pull
+endpoints `GET /agents/{agent_id}/tasks/next` and `POST /tasks/{id}/result` are
+removed.
+
 ## 1. How to use this file with an AI assistant
 
 An AI tool that opens the repository (Antigravity, Claude Code, Cursor and
@@ -54,11 +59,14 @@ Three rules prevent most integration problems:
 
 ## 2. Architecture in five sentences
 
-- The **master** runs on one PC: a FastAPI server with a SQLite database.
+- The **master** runs on one PC: a FastAPI server with a SQLite database. It
+  serves the web interface and the API on one address, `http://<master>:8000`.
 - Six **workers** run on six other PCs. All run the same program; only `.env` differs.
-- Workers call the master. The master never calls a worker, so only the
-  master's address has to be reachable.
-- The PCs reach each other over Tailscale: `MASTER_URL=http://<master Tailscale IP>:8000`.
+- Each worker registers with the master and sends heartbeats (worker -> master).
+  The master sends each task to its worker over A2A and asks for its status
+  (master -> worker, port 9000; section 13).
+- The PCs reach each other over Tailscale: `MASTER_URL=http://<master Tailscale IP>:8000`
+  on every worker, `WORKER_PUBLIC_URL=http://<worker Tailscale IP>:9000` for its A2A server.
 - The frontend asks the master again every 3 seconds. No WebSocket, no SSE.
 
 ## 3. Folder ownership
@@ -92,14 +100,28 @@ A change in `dap/shared/` needs approval from both Baran and Okan.
 
 | Service | Address |
 | --- | --- |
-| Master API | `http://localhost:8000`, prefix `/api/v1` |
+| Master | `http://localhost:8000`: web interface at `/`, API prefix `/api/v1` |
 | API docs | `http://localhost:8000/docs` |
-| Frontend (dev) | `http://localhost:5173` |
+| Frontend (development only) | `http://localhost:5173`; forwards `/api` to the master on :8000 |
 | Ollama | `http://localhost:11434/v1` (reached only from its own PC) |
-| Worker | no port; it only sends requests |
+| Worker | A2A server on `0.0.0.0:9000`; the master calls it (section 13) |
 
-All environment variables are listed in `.env.example`. Settings are read from
-`.env`; no model name, address or port is written in code.
+All environment variables are listed in `.env.example`; two workers on one PC
+use `.env.worker.example`. Settings are read from `.env` (a worker started with
+`--env-file <file>` reads that file instead); no model name, address or port is
+written in code. Added in Sprint 3:
+
+| Name | Where | Default | Meaning |
+| --- | --- | --- | --- |
+| `WORKER_HOST` | worker | `0.0.0.0` | A2A server bind address |
+| `WORKER_PORT` | worker | `9000` | A2A server port |
+| `WORKER_PUBLIC_URL` | worker | empty | Address the master uses, e.g. `http://100.x.y.z:9000`. Empty: `tailscale ip -4`, else `http://127.0.0.1:<WORKER_PORT>` with a warning |
+| `TASK_TIMEOUT_SEC` | master | `900` | A task not finished after this is marked `failed` |
+| `A2A_POLL_INTERVAL_SEC` | master | `3` | How often the master asks a worker for task status |
+| `LLM_TIMEOUT_SEC` | both | `120` | Seconds to wait for one model answer; use 600 on worker PCs |
+| `VITE_API_BASE_URL` | frontend | empty | Empty means the relative `/api/v1`; set only for unusual setups |
+
+`POLL_INTERVAL_SEC` is no longer used.
 
 ## 6. Enums
 
@@ -133,7 +155,8 @@ Source of truth: `dap/shared/schemas.py`. General rules:
   A longer document is split by the user and submitted in parts.
 
 ```text
-AgentRegister  agent_id, name, owner, role_hint, model, provider, capabilities
+AgentRegister  agent_id, name, owner, role_hint, model, provider, capabilities,
+               a2a_url                                            (a2a_url: Sprint 3)
 Agent          AgentRegister + status, current_task_id, registered_at, last_heartbeat_at
 Capabilities   coding, reasoning, context          (each 0-100)
 Heartbeat      status, current_task_id
@@ -144,8 +167,16 @@ Task           id, project_id, title, description, type, status, depends_on,
                assigned_agent_id, assignment_reason, attempt, created_at, updated_at
 TaskResult     task_id, agent_id, success, summary, files[{path, content}],
                error, duration_ms, tokens_used                    (Sprint 3)
+DapTaskPayload task_id, project_id, type, title, description, requirement_text,
+               target_files[path], dependency_files[{path, content}]   (Sprint 3)
+DapTaskOutput  summary, files[{path, content}], prompt_tokens, completion_tokens,
+               duration_ms                                        (Sprint 3)
 LLMResponse    text, prompt_tokens, completion_tokens, duration_ms
 ```
+
+`a2a_url` is the address of the worker's A2A server (null for an agent without
+one). `DapTaskPayload` and `DapTaskOutput` travel inside A2A messages (section
+13); the master stores each output as a `TaskResult`.
 
 `depends_on` is a list of task ids. `assignment_reason` is a short text saying
 why the master chose that agent; the interface shows it.
@@ -167,10 +198,16 @@ All paths start with `/api/v1`. Endpoints called by workers need the
 | 1 | `POST /projects/{id}/decompose` | - | 200 list of Task | frontend |
 | 1 | `GET /projects/{id}/tasks` | - | list of Task | frontend |
 | 1 | `POST /projects/{id}/assign` | - | list of Task with `assigned_agent_id` and `assignment_reason` | frontend |
-| 3 | `GET /agents/{agent_id}/tasks/next` | - | 200 Task or 204 | worker |
-| 3 | `POST /tasks/{id}/result` | TaskResult | 200 Task | worker |
+| 3 | `POST /projects/{id}/run` | - | 202 Project; starts sending the assigned tasks to the workers; 409 while a run is going | frontend |
+| 3 | `GET /projects/{id}/results` | - | list of TaskResult | frontend |
+| 3 | `GET /projects/{id}/files` | - | list of file paths in `workspace/<project_id>/` | frontend |
+| 3 | `GET /projects/{id}/files/{path}` | - | the file as text; 404; a path outside the project folder is refused | frontend |
 | 4 | `POST /tasks/{id}/reassign` | - | 200 Task | frontend |
 | 5 | `GET /metrics/agents` | - | time, success rate, tokens per agent | frontend |
+
+Workers do not pull tasks: the master sends them over A2A (section 13), so the
+earlier planned `GET /agents/{agent_id}/tasks/next` and `POST /tasks/{id}/result`
+are removed.
 
 Sprint 1 `/assign` rule: a task goes to the agent whose `role_hint` equals the
 task type; whether the agent is online is not checked. Sprint 2 switches to
@@ -196,9 +233,9 @@ Database tables:
 
 | Table | Sprint | Columns |
 | --- | --- | --- |
-| `agents` | 1 | agent_id (PK), name, owner, role_hint, model, provider, cap_coding, cap_reasoning, cap_context, status, current_task_id, registered_at, last_heartbeat_at |
+| `agents` | 1 | agent_id (PK), name, owner, role_hint, model, provider, cap_coding, cap_reasoning, cap_context, status, current_task_id, registered_at, last_heartbeat_at; a2a_url (Sprint 3) |
 | `projects` | 1 | id (PK), name, requirement_text, status, created_at, updated_at |
-| `tasks` | 1 | id (PK), project_id (FK), title, description, type, status, depends_on (JSON), assigned_agent_id (FK, nullable), assignment_reason, attempt, created_at, updated_at |
+| `tasks` | 1 | id (PK), project_id (FK), title, description, type, status, depends_on (JSON), assigned_agent_id (FK, nullable), assignment_reason, attempt, created_at, updated_at; remote_task_id (Sprint 3: the worker's A2A task id) |
 | `events` | 2 | id, project_id, task_id, agent_id, type, message, created_at |
 | `task_results` | 3 | id, task_id (FK), agent_id (FK), success, summary, files (JSON), error, duration_ms, tokens_used, created_at |
 
@@ -219,6 +256,14 @@ create_tasks(project_id: str, tasks: list[TaskCreate]) -> list[Task]
 list_tasks(project_id: str) -> list[Task]
 get_task(task_id: str) -> Task | None
 assign_task(task_id: str, agent_id: str, reason: str) -> Task
+set_task_status(task_id: str, status: TaskStatus, remote_task_id: str | None = None) -> Task
+increment_attempt(task_id: str) -> Task                             # Sprint 3
+
+# dap/master/db/results.py        (Can writes, Baran calls)          Sprint 3
+store_task_result(data: TaskResult, *, run_id: str) -> TaskResult   # one per task and run
+list_project_results(project_id: str) -> list[TaskResult]
+record_event(event_type: str, message: str, *, project_id=None, task_id=None,
+             agent_id=None) -> str
 
 # dap/shared/llm_client.py        (Eray writes; master and worker call)
 chat(messages: list[dict], *, temperature: float = 0.2,
@@ -237,6 +282,8 @@ repository functions. Repository functions return the models in
 Agreed behaviour between modules:
 
 - Importing `dap.master.db.repositories` creates the tables. Callers do nothing extra.
+  A column added in a later sprint is added to an older `data/dap.db` at start
+  (`ALTER TABLE`); deleting `data/dap.db` also works.
 - For decomposition the model is asked for
   `{"tasks": [{"key", "title", "description", "type", "depends_on"}]}`, where
   `key` is a temporary name and `depends_on` lists keys. The decomposer turns
@@ -321,8 +368,63 @@ template, so small local models can succeed and a broken part is easy to find:
 The bar for the demo: the generated application starts and one or two basic
 operations work. The template gets its own folder in Sprint 3.
 
-Before the tasks are handed out, the master writes one short sketch of the
-generated app's endpoints and tables and adds it to every task as context,
-so no agent invents its own endpoints or tables. Its exact shape is fixed in
-Sprint 3. The files of a project go to `workspace/<project_id>/`, which is
-never committed.
+The template is the shared sketch: every template file starts with a comment
+saying what goes there and which names the other files rely on, so no agent
+invents its own endpoints or tables. In Sprint 3 the decomposer produces exactly
+one task per code type; each task fills fixed files:
+
+| Task type | Files it fills | Depends on |
+| --- | --- | --- |
+| `database` | `backend/database.py` | - |
+| `backend` | `backend/main.py` | database |
+| `frontend` | `frontend/index.html`, `frontend/app.js` | backend |
+| `testing` | `tests/test_app.py` | backend, frontend |
+| (integrator) | `README.md`, `requirements.txt` | - |
+
+A worker may only write the files of its task (`target_files`). The files of a
+project go to `workspace/<project_id>/`, a git repository with one commit per
+completed task (`"<task type>: <title> (by <agent_id>)"`). `workspace/` is
+never committed to the team repository.
+
+## 13. A2A between master and workers (from Sprint 3)
+
+Workers run a small A2A server (A2A protocol v1.0, HTTP+JSON binding,
+https://a2a-protocol.org/latest/specification/); the master is the client. We
+implement three operations, by hand with FastAPI, Pydantic and httpx:
+
+| Operation | Worker endpoint | Notes |
+| --- | --- | --- |
+| Agent Card | `GET /.well-known/agent-card.json` | no token |
+| SendMessage | `POST /message:send` | the master always sends `configuration.returnImmediately: true`; answer `{"task": Task}` |
+| GetTask | `GET /tasks/{id}` | the master polls it every `A2A_POLL_INTERVAL_SEC`; answer: the Task |
+
+Every master -> worker request carries `X-Agent-Token` (401 when wrong) and
+`A2A-Version: 1.0`. Not implemented: streaming, push notifications, ListTasks,
+CancelTask, SubscribeToTask, the extended agent card (the card says
+`"streaming": false, "pushNotifications": false`).
+
+Wire rules: camelCase field names, enum names such as `TASK_STATE_COMPLETED`
+and `ROLE_USER`, parts without a `kind` field (`{"text": ...}` or
+`{"data": ..., "mediaType": "application/json"}`). The models are in
+`dap/shared/schemas.py` (`AgentCard`, `SendMessageRequest`, `A2ATask`, ...).
+
+- The message has a text part (the task title) and a data part with a
+  `DapTaskPayload`; `contextId` is the project id.
+- A finished task has one artifact named `result` whose data part is a
+  `DapTaskOutput`. A failed task has `status.message` with a text part that
+  explains the error.
+- States: `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`, `TASK_STATE_COMPLETED`,
+  `TASK_STATE_FAILED`, stored as `in_progress`, `in_progress`, `completed`, `failed`.
+- A worker runs one task at a time, in the order received; a message sent
+  while it is busy is accepted and queued.
+- At `/run`, a task whose agent is offline is assigned again among the online
+  agents with the section 8 rule; with no online agent it fails with
+  "no online agent". A task whose dependency failed fails with
+  "dependency failed". Reassigning failed tasks is Sprint 4.
+
+Deviations from the specification, chosen for simplicity:
+
+- Error answers use this contract's `{"detail": "message"}` (unknown task 404,
+  bad body 422, wrong token 401), not the specification's `google.rpc.Status`.
+- Workers accept `application/json` and `application/a2a+json` request bodies
+  and answer with `application/json`.

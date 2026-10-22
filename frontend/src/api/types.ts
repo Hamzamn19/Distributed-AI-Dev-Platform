@@ -47,6 +47,7 @@ export interface Agent {
   current_task_id: string | null;
   registered_at: string; // ISO 8601, UTC
   last_heartbeat_at: string | null;
+  a2a_url: string | null; // worker's A2A server, e.g. http://100.x.y.z:9000
 }
 
 export interface ProjectCreate {
