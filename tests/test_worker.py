@@ -63,9 +63,9 @@ def test_run_registers_and_registers_again_after_a_404(monkeypatch, master_http)
     registrations = []
     real_register = worker.register
 
-    def counting_register(c, s):
+    def counting_register(c, s, *rest):
         registrations.append(s.agent_id)
-        real_register(c, s)
+        real_register(c, s, *rest)
 
     monkeypatch.setattr(worker, "register", counting_register)
     worker.run(client, settings, StopAfter(3))
