@@ -10,7 +10,7 @@ from fastapi import APIRouter, FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from dap import __version__
-from dap.master.api import agents, health, projects
+from dap.master.api import agents, health, projects, tasks
 from dap.master.config import get_settings
 
 API_PREFIX = "/api/v1"
@@ -30,4 +30,5 @@ api = APIRouter(prefix=API_PREFIX)
 api.include_router(health.router)
 api.include_router(agents.router)
 api.include_router(projects.router)
+api.include_router(tasks.router)
 app.include_router(api)
