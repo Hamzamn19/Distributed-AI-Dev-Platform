@@ -369,10 +369,12 @@ template, so small local models can succeed and a broken part is easy to find:
 The bar for the demo: the generated application starts and one or two basic
 operations work. The template gets its own folder in Sprint 3.
 
-The template is the shared sketch: every template file starts with a comment
+The template is in `templates/webapp/`; the integrator copies it into every
+project. It is the shared sketch: every template file starts with a comment
 saying what goes there and which names the other files rely on, so no agent
 invents its own endpoints or tables. In Sprint 3 the decomposer produces exactly
-one task per code type; each task fills fixed files:
+one task per code type, in a fixed order with fixed dependencies (the model
+writes the titles and descriptions); each task fills fixed files:
 
 | Task type | Files it fills | Depends on |
 | --- | --- | --- |
@@ -380,7 +382,7 @@ one task per code type; each task fills fixed files:
 | `backend` | `backend/main.py` | database |
 | `frontend` | `frontend/index.html`, `frontend/app.js` | backend |
 | `testing` | `tests/test_app.py` | backend, frontend |
-| (integrator) | `README.md`, `requirements.txt` | - |
+| (integrator) | `README.md`, `requirements.txt`, `.gitignore` | - |
 
 A worker may only write the files of its task (`target_files`). The files of a
 project go to `workspace/<project_id>/`, a git repository with one commit per

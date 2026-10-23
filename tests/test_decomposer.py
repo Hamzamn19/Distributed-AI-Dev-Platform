@@ -82,3 +82,33 @@ def test_unreachable_model_raises_runtime_error(monkeypatch):
     monkeypatch.setattr(decomposer, "chat", down)
     with pytest.raises(RuntimeError):
         decomposer.decompose(REQUIREMENT)
+
+
+def test_two_tasks_of_one_type_are_refused(monkeypatch):
+    doubled = decomposer.FALLBACK_TASKS + [dict(decomposer.FALLBACK_TASKS[1], key="T5")]
+    calls = []
+
+    def fake_chat(messages, **kwargs):
+        calls.append(messages)
+        return _answer(json.dumps({"tasks": doubled}))
+
+    monkeypatch.setattr(decomposer, "chat", fake_chat)
+    tasks = decomposer.decompose(REQUIREMENT)
+    assert len(calls) == 2  # retried once, then the fixed template
+    assert "more than one task of type backend" in calls[1][-1]["content"]
+    assert [t.title for t in tasks] == [t["title"] for t in decomposer.FALLBACK_TASKS]
+
+
+def test_order_and_dependencies_are_fixed_whatever_the_model_answers(monkeypatch):
+    reversed_tasks = [dict(t, depends_on=[]) for t in reversed(decomposer.FALLBACK_TASKS)]
+    reversed_tasks[0]["title"] = "Library tests"  # the testing task, written first
+    monkeypatch.setattr(decomposer, "chat",
+                        lambda *a, **k: _answer(json.dumps({"tasks": reversed_tasks})))
+    tasks = decomposer.decompose(REQUIREMENT)
+    assert [t.type.value for t in tasks] == ["database", "backend", "frontend", "testing"]
+    ids = {t.type.value: t.id for t in tasks}
+    assert tasks[0].depends_on == []
+    assert tasks[1].depends_on == [ids["database"]]
+    assert tasks[2].depends_on == [ids["backend"]]
+    assert tasks[3].depends_on == [ids["backend"], ids["frontend"]]
+    assert tasks[3].title == "Library tests"
