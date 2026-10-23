@@ -230,3 +230,18 @@ def assign_task(task_id: str, agent_id: str, reason: str) -> Task:
         record.updated_at = datetime.now(timezone.utc)
         session.flush()
         return _task(record)
+
+
+def retry_task(task_id: str) -> Task:
+    """Contract section 6: a failed task returns to pending with attempt + 1."""
+    with SessionLocal.begin() as session:
+        record = session.get(TaskModel, task_id)
+        if record is None:
+            raise ValueError(f"Task {task_id!r} does not exist")
+        record.status = TaskStatus.PENDING
+        record.attempt += 1
+        record.assigned_agent_id = None
+        record.assignment_reason = None
+        record.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        return _task(record)
