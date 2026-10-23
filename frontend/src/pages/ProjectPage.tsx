@@ -10,6 +10,7 @@ import {
 } from "../api/client";
 import type { Task } from "../api/types";
 import Badge from "../components/Badge";
+import ProjectOutput from "../components/ProjectOutput";
 import TypeBadge from "../components/TypeBadge";
 import { usePolling } from "../hooks/usePolling";
 
@@ -203,6 +204,8 @@ export default function ProjectPage() {
           </>
         )}
       </section>
+
+      <ProjectOutput projectId={id} tasks={tasks} agents={agents} />
     </>
   );
 }

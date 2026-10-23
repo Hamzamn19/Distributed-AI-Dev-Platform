@@ -2,7 +2,7 @@
 // The UI is served by the master itself (http://<master>:8000), so the API base is
 // relative: "/api/v1". During development Vite proxies /api to the master (vite.config.js).
 // Set VITE_API_BASE_URL only for unusual setups (for example "http://100.x.y.z:8000").
-import type { Agent, Project, ProjectCreate, Task } from "./types";
+import type { Agent, AgentCard, Project, ProjectCreate, Task, TaskResult } from "./types";
 
 const BASE_URL = `${import.meta.env.VITE_API_BASE_URL || ""}/api/v1`;
 
@@ -17,7 +17,7 @@ function errorText(status: number, body: unknown): string {
   return `Request failed (${status})`;
 }
 
-export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+async function send(path: string, init?: RequestInit): Promise<Response> {
   let response: Response;
   try {
     response = await fetch(`${BASE_URL}${path}`, {
@@ -36,7 +36,11 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
     }
     throw new Error(errorText(response.status, body));
   }
-  return response.json() as Promise<T>;
+  return response;
+}
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  return (await send(path, init)).json() as Promise<T>;
 }
 
 export function getAgents(): Promise<Agent[]> {
@@ -70,4 +74,24 @@ export function assignProject(id: string): Promise<Task[]> {
 // Sends the assigned tasks to the workers (A2A); the master answers 202 at once.
 export function runProject(id: string): Promise<Project> {
   return request<Project>(`/projects/${id}/run`, { method: "POST" });
+}
+
+export function getResults(id: string): Promise<TaskResult[]> {
+  return request<TaskResult[]>(`/projects/${id}/results`);
+}
+
+export function getFiles(id: string): Promise<string[]> {
+  return request<string[]>(`/projects/${id}/files`);
+}
+
+// The text of one generated file.
+export async function getFile(id: string, path: string): Promise<string> {
+  const encoded = path.split("/").map(encodeURIComponent).join("/");
+  return (await send(`/projects/${id}/files/${encoded}`)).text();
+}
+
+// The master asks the worker for its A2A agent card: success means the master
+// reaches the worker, the direction tasks are sent in.
+export function getAgentCard(agentId: string): Promise<AgentCard> {
+  return request<AgentCard>(`/agents/${agentId}/card`);
 }

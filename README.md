@@ -51,8 +51,13 @@ python -m dap.worker.main                          # reads .env
 python -m dap.worker.main --env-file .env.worker1  # see .env.worker.example
 ```
 
-Checks: `pytest` (no Ollama needed) and, with the master running on `LLM_MOCK=1`,
-`python scripts/smoke_test.py`.
+Checks: `pytest` (no Ollama needed); `python scripts/e2e_local.py` runs the whole
+flow on this PC (master, two workers, mock answers) and prints `E2E PASSED`; on a
+worker PC, `python scripts/check_connection.py` tests the tailnet connection.
+
+How it works: [`docs/architecture.md`](docs/architecture.md). The master sends the
+tasks to the workers over A2A; the generated application appears in
+`workspace/<project_id>/`, one git commit per task.
 
 ## Team workflow
 

@@ -11,9 +11,8 @@ Version 1.1 (18 October 2026): adds the Sprint 2 selection formula, the task
 taxonomy, capability measurement and the requirement length limit.
 
 Version 1.2 (Sprint 3): the master serves the web interface and the API on one
-address, and sends tasks to the workers over A2A (section 13). The planned pull
-endpoints `GET /agents/{agent_id}/tasks/next` and `POST /tasks/{id}/result` are
-removed.
+address, and sends tasks to the workers over A2A (section 13). The endpoints
+planned earlier for workers to pull tasks and post results are removed.
 
 ## 1. How to use this file with an AI assistant
 
@@ -199,6 +198,7 @@ All paths start with `/api/v1`. Endpoints called by workers need the
 | 1 | `POST /projects/{id}/decompose` | - | 200 list of Task | frontend |
 | 1 | `GET /projects/{id}/tasks` | - | list of Task | frontend |
 | 1 | `POST /projects/{id}/assign` | - | list of Task with `assigned_agent_id` and `assignment_reason` | frontend |
+| 3 | `GET /agents/{agent_id}/card` | - | the worker's A2A agent card, fetched by the master; 404 unknown agent or no A2A address; 502 the master cannot reach the worker | frontend |
 | 3 | `POST /projects/{id}/run` | - | 202 Project; starts sending the assigned tasks to the workers; 409 while a run is going | frontend |
 | 3 | `GET /projects/{id}/results` | - | list of TaskResult | frontend |
 | 3 | `GET /projects/{id}/files` | - | list of file paths in `workspace/<project_id>/` | frontend |
@@ -206,9 +206,8 @@ All paths start with `/api/v1`. Endpoints called by workers need the
 | 4 | `POST /tasks/{id}/reassign` | - | 200 Task | frontend |
 | 5 | `GET /metrics/agents` | - | time, success rate, tokens per agent | frontend |
 
-Workers do not pull tasks: the master sends them over A2A (section 13), so the
-earlier planned `GET /agents/{agent_id}/tasks/next` and `POST /tasks/{id}/result`
-are removed.
+Workers do not pull tasks: the master sends them over A2A and collects the
+results (section 13).
 
 Sprint 1 `/assign` rule: a task goes to the agent whose `role_hint` equals the
 task type; whether the agent is online is not checked. Sprint 2 switches to

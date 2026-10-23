@@ -91,9 +91,24 @@ On a worker PC (or in a second terminal on the master PC):
 python -m dap.worker.main
 ```
 
-It registers with `MASTER_URL` and sends a heartbeat every
-`HEARTBEAT_INTERVAL_SEC`; the Agents page shows it as `idle`. Stop it with Ctrl+C:
-after `HEARTBEAT_TIMEOUT_SEC` (30 s) it shows as `offline`.
+The worker starts its A2A server on `WORKER_PORT` (default 9000); the master sends
+tasks to it there. It registers with `MASTER_URL` together with its own address,
+`WORKER_PUBLIC_URL` (on the tailnet: `http://<this PC's Tailscale IP>:9000`; when
+it is empty the worker asks Tailscale itself), and sends a heartbeat every
+`HEARTBEAT_INTERVAL_SEC`. The Agents page shows it as `idle`, as `busy` while it
+works, and whether the master reaches its A2A server. Stop it with Ctrl+C: after
+`HEARTBEAT_TIMEOUT_SEC` (30 s) it shows as `offline`.
+
+The first time a worker starts, Windows Firewall asks whether Python may accept
+connections: allow it on private networks. Without that the master cannot send
+tasks to this PC. To add the rule by hand (PowerShell as administrator):
+
+```powershell
+New-NetFirewallRule -DisplayName "DAP worker 9000" -Direction Inbound -Protocol TCP -LocalPort 9000 -Action Allow
+```
+
+On a worker PC set `LLM_TIMEOUT_SEC=600`: writing code with a local model takes
+minutes.
 
 Two workers on one PC, for local tests:
 
@@ -108,6 +123,12 @@ python -m dap.worker.main --env-file .env.worker2
 `python scripts/seed_agents.py` registers the six team agents of
 `docs/agents.json` at once (they turn offline after 30 s without a worker).
 
+The whole flow on one PC, with two workers and mock answers, in one command:
+
+```bash
+python scripts/e2e_local.py      # prints E2E PASSED or the step that failed
+```
+
 ## 7. Connect the PCs with Tailscale
 
 1. Install Tailscale and sign in with the **shared team account**. (The free
@@ -115,15 +136,34 @@ python -m dap.worker.main --env-file .env.worker2
    one account.)
 2. On the master PC run `tailscale ip -4`. The `100.x.y.z` address it prints
    does not change.
-3. On every worker PC set `MASTER_URL=http://100.x.y.z:8000` in `.env`.
-4. The first time the master starts, Windows Firewall asks for permission:
-   allow it.
-5. From another PC open `http://100.x.y.z:8000/api/v1/health` in a browser.
+3. On every worker PC set `MASTER_URL=http://100.x.y.z:8000` and
+   `WORKER_PUBLIC_URL=http://<that worker's own Tailscale IP>:9000` in `.env`.
+4. The first time the master and each worker start, Windows Firewall asks for
+   permission: allow it (master: port 8000, worker: port 9000).
+5. From another PC open `http://100.x.y.z:8000` in a browser: the web interface.
 
-Backup when Tailscale does not work: on the master PC run
-`cloudflared tunnel --url http://localhost:8000` and use the printed
-`https://....trycloudflare.com` address as `MASTER_URL`. The address changes
-every time the tunnel restarts.
+Connections go both ways: workers call the master (register, heartbeat) and the
+master calls the workers (tasks over A2A). A Cloudflare quick tunnel to the master
+alone is therefore not enough any more; use Tailscale.
+
+### First tailnet run (checklist)
+
+Do it in this order; go on only when a step works.
+
+1. **Master PC.** Tailscale on. `cd frontend && npm run build`, then
+   `python -m dap.master`. From the master PC open `http://localhost:8000`; from
+   any other PC open `http://<master Tailscale IP>:8000`. Both show the web interface.
+2. **One worker PC.** Tailscale on. `.env` with `MASTER_URL`, `WORKER_PUBLIC_URL`,
+   `AGENT_TOKEN` (the master's value), `AGENT_ID` and the model. Start
+   `python -m dap.worker.main`, allow the firewall prompt, then in a second
+   terminal run `python scripts/check_connection.py`. All six lines must say OK;
+   each FAIL line says the likely fix.
+3. **On the master's web interface:** the Agents page shows the worker `idle`
+   with "✓ reachable". Create a small project, Decompose, Assign agents, Run on
+   agents: its tasks finish on that PC.
+4. **All six workers.** Repeat step 2 on each PC (each with its own `AGENT_ID`).
+   The Agents page shows six reachable agents; run the sample requirement
+   `docs/sample_requirements/orta.md`.
 
 ## 8. Ollama
 
@@ -144,5 +184,8 @@ the PC's memory allows.
 | `ModuleNotFoundError: No module named 'dap'` | Run commands from the repository root, with the virtual environment active |
 | `/health` works on the master PC but not from another PC | Check `tailscale status` on both PCs; check the firewall prompt; the master must run with `--host 0.0.0.0` |
 | Worker gets 401 | `AGENT_TOKEN` differs between the two `.env` files |
+| Agents page: worker `idle` but "✗ not reachable" | The master cannot reach the worker's port 9000: firewall on the worker PC, or a wrong `WORKER_PUBLIC_URL`. Run `python scripts/check_connection.py` on the worker |
+| Worker says "A2A server could not start" | Another program (or a second worker) uses `WORKER_PORT`; choose another port and update `WORKER_PUBLIC_URL` |
+| A task fails with "timeout" | The model needs longer: raise `TASK_TIMEOUT_SEC` on the master and `LLM_TIMEOUT_SEC` on the worker |
 | http://localhost:8000 says "Frontend not built" | Run `cd frontend && npm install && npm run build`, then reload |
 | Worker gets `Env file not found` | The `--env-file` path is wrong; run from the repository root |

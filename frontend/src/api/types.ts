@@ -79,6 +79,30 @@ export interface Task {
   updated_at: string;
 }
 
+export interface GeneratedFile {
+  path: string;
+  content: string;
+}
+
+// One stored result of a task (GET /projects/{id}/results).
+export interface TaskResult {
+  task_id: string;
+  agent_id: string;
+  success: boolean;
+  summary: string;
+  files: GeneratedFile[];
+  error: string | null;
+  duration_ms: number;
+  tokens_used: number;
+}
+
+// The part of a worker's A2A agent card the UI uses (camelCase: A2A wire format).
+export interface AgentCard {
+  name: string;
+  description: string;
+  version: string;
+}
+
 export interface HealthResponse {
   status: string;
   version: string;

@@ -46,3 +46,55 @@ def test_smoke_names_the_failing_step(master_http):
     smoke = _load("smoke_test")
     with pytest.raises(smoke.StepFailed, match="^register"):
         smoke.smoke(master_http, "wrong-token", log=lambda line: None)
+
+
+class FakeHttp:
+    """Answers like a master and a worker; `down` lists the parts that do not answer."""
+
+    def __init__(self, down=(), token_status=404, card_status=200):
+        self.down, self.token_status, self.card_status = down, token_status, card_status
+
+    def _answer(self, url, status):
+        import httpx
+
+        return httpx.Response(status, request=httpx.Request("GET", url))
+
+    def get(self, url, timeout):
+        import httpx
+
+        if "/api/v1/health" in url:
+            if "master" in self.down:
+                raise httpx.ConnectError("refused")
+            return self._answer(url, 200)
+        if "/card" in url:
+            return self._answer(url, self.card_status)
+        if "worker" in self.down:
+            raise httpx.ConnectError("refused")
+        return self._answer(url, 200)
+
+    def post(self, url, timeout, json, headers):
+        return self._answer(url, self.token_status)
+
+
+def _check(monkeypatch, **fake):
+    check = _load("check_connection")
+    monkeypatch.setenv("MASTER_URL", "http://100.64.0.1:8000")
+    monkeypatch.setenv("WORKER_PORT", "9000")
+    settings = check.config.get_settings()
+    return {name: (ok, message) for name, ok, message in
+            check.checks(settings, "http://100.64.0.2:9000", "100.64.0.2", http=FakeHttp(**fake))}
+
+
+def test_check_connection_all_ok(monkeypatch):
+    results = _check(monkeypatch)
+    assert len(results) == 6 and all(ok for ok, _ in results.values())
+
+
+def test_check_connection_names_the_likely_fix(monkeypatch):
+    assert "MASTER_URL" in _check(monkeypatch, down=("master",))["master health"][1]
+    assert "same as in the master" in _check(monkeypatch, token_status=401)["AGENT_TOKEN"][1]
+    not_running = _check(monkeypatch, down=("worker",), card_status=502)
+    assert "start the worker" in not_running["A2A server on this PC"][1]
+    assert "not running" in not_running["master reaches this worker"][1]
+    firewall = _check(monkeypatch, card_status=502)["master reaches this worker"]
+    assert not firewall[0] and "Firewall" in firewall[1]

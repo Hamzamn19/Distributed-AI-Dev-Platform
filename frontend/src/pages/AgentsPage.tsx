@@ -1,7 +1,51 @@
-import { getAgents } from "../api/client";
+import { useCallback } from "react";
+import { getAgentCard, getAgents } from "../api/client";
 import type { Agent } from "../api/types";
 import Badge from "../components/Badge";
 import { usePolling } from "../hooks/usePolling";
+
+type Reach = Record<string, { ok: boolean; text: string }>;
+
+// Asks the master to fetch each online worker's A2A agent card (every 10 s).
+// "reachable" means the master can send tasks to that worker.
+function useReachability(agents: Agent[] | null) {
+  const key = (agents ?? [])
+    .filter((a) => a.a2a_url && a.status !== "offline")
+    .map((a) => a.agent_id)
+    .join(",");
+  const check = useCallback(async () => {
+    const result: Reach = {};
+    await Promise.all(
+      key.split(",").filter(Boolean).map(async (id) => {
+        try {
+          await getAgentCard(id);
+          result[id] = { ok: true, text: "reachable" };
+        } catch (e) {
+          result[id] = { ok: false, text: e instanceof Error ? e.message : String(e) };
+        }
+      }),
+    );
+    return result;
+  }, [key]);
+  return usePolling(check, 10000).data ?? {};
+}
+
+function A2A({ agent, reach }: { agent: Agent; reach: Reach }) {
+  if (!agent.a2a_url) return <span className="text-slate-400">no A2A address</span>;
+  const state = reach[agent.agent_id];
+  return (
+    <span>
+      <span className="font-mono text-xs">{agent.a2a_url}</span>{" "}
+      {agent.status === "offline" ? null : !state ? (
+        <span className="text-slate-400">checking...</span>
+      ) : (
+        <span className={state.ok ? "text-emerald-700" : "text-red-700"} title={state.text}>
+          {state.ok ? "✓ reachable" : "✗ not reachable"}
+        </span>
+      )}
+    </span>
+  );
+}
 
 function Scores({ agent }: { agent: Agent }) {
   const { coding, reasoning, context } = agent.capabilities;
@@ -14,6 +58,7 @@ function Scores({ agent }: { agent: Agent }) {
 
 export default function AgentsPage() {
   const { data: agents, error, loading } = usePolling(getAgents);
+  const reach = useReachability(agents);
 
   return (
     <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
@@ -44,7 +89,8 @@ export default function AgentsPage() {
                   <th className="py-2 pr-4">Coding</th>
                   <th className="py-2 pr-4">Reasoning</th>
                   <th className="py-2 pr-4">Context</th>
-                  <th className="py-2">Status</th>
+                  <th className="py-2 pr-4">Status</th>
+                  <th className="py-2">A2A server</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100">
@@ -57,8 +103,11 @@ export default function AgentsPage() {
                     <td className="py-3 pr-4">{agent.capabilities.coding}</td>
                     <td className="py-3 pr-4">{agent.capabilities.reasoning}</td>
                     <td className="py-3 pr-4">{agent.capabilities.context}</td>
-                    <td className="py-3">
+                    <td className="py-3 pr-4">
                       <Badge value={agent.status} />
+                    </td>
+                    <td className="py-3">
+                      <A2A agent={agent} reach={reach} />
                     </td>
                   </tr>
                 ))}
@@ -82,6 +131,9 @@ export default function AgentsPage() {
                 </p>
                 <p className="mt-2">
                   <Scores agent={agent} />
+                </p>
+                <p className="mt-2 text-sm">
+                  <A2A agent={agent} reach={reach} />
                 </p>
               </article>
             ))}

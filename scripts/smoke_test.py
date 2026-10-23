@@ -7,7 +7,8 @@ project -> decompose -> assign -> tasks and prints SMOKE TEST PASSED (exit 0) or
 the step that failed (exit 1). MASTER_URL and AGENT_TOKEN come from .env.
 
 It registers one agent, "agent-smoke-test"; it turns offline after
-HEARTBEAT_TIMEOUT_SEC because nothing sends its heartbeats.
+HEARTBEAT_TIMEOUT_SEC because nothing sends its heartbeats. It checks the master
+alone; scripts/e2e_local.py also starts two workers and runs the tasks on them.
 """
 
 import os

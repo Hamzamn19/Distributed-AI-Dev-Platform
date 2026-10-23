@@ -43,3 +43,6 @@ npm run dev            # http://localhost:5173, /api is forwarded to the master 
 Sprint 3: every page uses the real API; the UI is served by the master at `/`.
 "Run on agents" sends the tasks to the workers; the task board shows each task's live
 status and the agent with its model, and the Agents page shows a working agent as busy.
+The project page lists every result (summary or error, time, tokens) and the generated
+files with a viewer; the Agents page shows each A2A address and whether the master
+reaches it (checked every 10 s).
