@@ -419,6 +419,11 @@ and `ROLE_USER`, parts without a `kind` field (`{"text": ...}` or
   `TASK_STATE_FAILED`, stored as `in_progress`, `in_progress`, `completed`, `failed`.
 - A worker runs one task at a time, in the order received; a message sent
   while it is busy is accepted and queued.
+- Before it answers, the worker checks the files: exactly the task's
+  `target_files`, none empty, and every Python file loads next to the template
+  and the files of all earlier tasks (`dependency_files` holds the whole chain).
+  On a problem the model gets the error text and answers again, at most twice;
+  still wrong, the task fails with that error.
 - At `/run`, a task whose agent is offline is assigned again among the online
   agents with the section 8 rule; with no online agent it fails with
   "no online agent". A task whose dependency failed fails with

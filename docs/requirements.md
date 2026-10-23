@@ -130,5 +130,6 @@ reports) are tracked in `docs/sprints/`, not here.
   tailnet are the next check. Starting a project still takes three buttons
   (Decompose, Assign agents, Run on agents).
 - FR-18: failed and timed-out tasks are detected and shown; an offline agent's
-  task is reassigned when a run starts. Retrying a failed task on another agent
-  is Sprint 4.
+  task is reassigned when a run starts; a worker corrects its own files when
+  they do not load (up to two more answers). Retrying a failed task on another
+  agent is Sprint 4.

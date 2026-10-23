@@ -298,3 +298,13 @@ def test_run_without_tasks_gives_409(db):
         name="Empty", requirement_text="A library where members borrow books."))
     assert client.post(f"/api/v1/projects/{created.id}/run").status_code == 409
     assert client.post("/api/v1/projects/unknown/run").status_code == 404
+
+
+def test_a_task_gets_the_files_of_every_earlier_task_in_its_chain(db):
+    agent("a1"), agent("a2")
+    pid, _ = project(*APP)
+    fake = FakeA2A()
+    orchestrator.run_project(pid, client=fake, poll_interval=0)
+    testing = [p for _, p in fake.sent if p.type.value == "testing"][0]
+    assert sorted(f.path for f in testing.dependency_files) == [
+        "backend/database.py", "backend/main.py", "frontend/app.js", "frontend/index.html"]

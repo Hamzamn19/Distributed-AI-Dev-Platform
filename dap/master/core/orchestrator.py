@@ -7,7 +7,8 @@ Owner: Baran - Sprint 3.
 
 For one run:
 - Every assigned task goes to its agent when all the tasks in its depends_on are
-  completed; it gets their files as dependency_files. Tasks without open
+  completed; it gets their files, and those of the tasks before them, as
+  dependency_files (the testing task also sees backend/database.py). Tasks without open
   dependencies are sent at once, so they run in parallel on different agents
   (one agent runs its tasks one after another).
 - An agent that is offline or has no A2A address is replaced with the section 8
@@ -171,6 +172,23 @@ def _send_ready_tasks(run: _Run) -> None:
             _send(run, task)
 
 
+def _dependency_files(run: _Run, task: Task) -> list[GeneratedFile]:
+    """Files of every completed task this one depends on, directly or through others."""
+    depends = {t.id: t.depends_on for t in repositories.list_tasks(run.project_id)}
+    seen: list[str] = []
+    stack = list(task.depends_on)
+    while stack:
+        dep = stack.pop(0)
+        if dep not in seen:
+            seen.append(dep)
+            stack.extend(depends.get(dep, []))
+    files: dict[str, GeneratedFile] = {}
+    for dep in reversed(seen):  # earlier tasks first; a later file of one path wins
+        for file in run.files.get(dep, []):
+            files[file.path] = file
+    return list(files.values())
+
+
 def _usable(agent: Agent | None) -> bool:
     return agent is not None and agent.status != AgentStatus.OFFLINE and bool(agent.a2a_url)
 
@@ -192,7 +210,7 @@ def _send(run: _Run, task: Task) -> None:
         task_id=task.id, project_id=run.project_id, type=task.type, title=task.title,
         description=task.description, requirement_text=run.requirement_text,
         target_files=integrator.TEMPLATE_FILES.get(task.type, []),
-        dependency_files=[f for dep in task.depends_on for f in run.files.get(dep, [])],
+        dependency_files=_dependency_files(run, task),
     )
     repositories.increment_attempt(task.id)
     try:

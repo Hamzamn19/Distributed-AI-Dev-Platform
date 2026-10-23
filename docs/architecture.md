@@ -57,7 +57,10 @@ how the parts work together.
    files it must fill and the files of the tasks it depends on. Independent
    tasks run in parallel on different PCs; one PC runs its tasks one after another.
 5. **Execute.** The worker builds a prompt from the template file and asks its
-   local model; the answer must contain exactly the task's files.
+   local model; the answer must contain exactly the task's files. The worker
+   then loads every new Python file next to the files of the earlier tasks; on
+   an error (for example a missing import) the model gets the error message and
+   corrects its files, at most twice, before the task counts as failed.
 6. **Collect.** The master polls `GET /tasks/{id}`. A completed task's files are
    committed to `workspace/<project_id>/`; every result (or error) is stored and
    shown on the web interface.

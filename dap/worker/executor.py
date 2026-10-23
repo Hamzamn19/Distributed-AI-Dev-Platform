@@ -5,8 +5,13 @@ Owner: Eray - Sprint 3.
 For each task: build the prompt (prompts.py), ask the local model with
 chat(json_mode=True), read {"summary", "files"} from the answer (Markdown code
 fences around a file's content are removed) and check the files: exactly the
-task's target_files, none empty, Python files without syntax errors. Any error
-makes the task TASK_STATE_FAILED with a message that explains it.
+task's target_files, none empty, Python files without syntax errors, and every
+Python file really loads (verify(): the template, the dependency files and the
+new files are written to a temporary folder and each new .py file is run once).
+
+Self-correction: when a check fails, the model gets the problem (for example
+"NameError: name 'database' is not defined") and answers again, at most
+FIX_ROUNDS times. Still wrong after that: TASK_STATE_FAILED with the problem.
 
 With LLM_MOCK=1 no model is asked: every target file gets a fixed, working
 content (MOCK_FILES), so the whole flow can be tested without Ollama.
@@ -19,9 +24,14 @@ import logging
 import os
 import queue
 import re
+import shutil
+import subprocess
+import sys
+import tempfile
 import threading
 import time
 import uuid
+from pathlib import Path
 from collections.abc import Callable
 from datetime import datetime, timezone
 
@@ -97,6 +107,53 @@ def check_output(payload: DapTaskPayload, output: DapTaskOutput) -> None:
                 raise ValueError(f"syntax error in {file.path}, line {exc.lineno}: {exc.msg}") from None
 
 
+FIX_ROUNDS = 2          # extra answers the model may give after a failed check
+VERIFY_TIMEOUT_SEC = 60
+
+# Runs one generated file once, from the application folder, as `python <file>` would.
+_RUN_FILE = (
+    "import runpy, sys; sys.path.insert(0, '.'); "
+    "runpy.run_path(sys.argv[1], run_name='dap_check')"
+)
+
+
+def verify(payload: DapTaskPayload, output: DapTaskOutput) -> str | None:
+    """Load every new Python file next to the template and the dependency files.
+
+    Returns the problem as a short text (the last lines of the error), or None.
+    """
+    python_files = [f.path for f in output.files if f.path.endswith(".py")]
+    if not python_files:
+        return None
+    with tempfile.TemporaryDirectory(prefix="dap-check-") as folder:
+        root = Path(folder)
+        if prompts.TEMPLATE_DIR.is_dir():
+            shutil.copytree(prompts.TEMPLATE_DIR, root, dirs_exist_ok=True)
+        for file in [*payload.dependency_files, *output.files]:
+            target = root / file.path
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text(file.content, encoding="utf-8")
+        for path in python_files:
+            try:
+                result = subprocess.run(
+                    [sys.executable, "-c", _RUN_FILE, path], cwd=root,
+                    capture_output=True, text=True, timeout=VERIFY_TIMEOUT_SEC)
+            except subprocess.TimeoutExpired:
+                return f"{path} did not finish loading within {VERIFY_TIMEOUT_SEC} s"
+            if result.returncode != 0:
+                lines = [line for line in result.stderr.strip().splitlines() if line.strip()]
+                return f"{path} fails when it is loaded:\n" + "\n".join(lines[-4:])
+    return None
+
+
+def _read_answer(text: str, payload: DapTaskPayload) -> DapTaskOutput:
+    data = _extract_json(text)
+    files = [GeneratedFile(path=str(f.get("path", "")),
+                           content=clean_content(str(f.get("content", ""))))
+             for f in data.get("files", []) if isinstance(f, dict)]
+    return DapTaskOutput(summary=str(data.get("summary") or payload.title), files=files)
+
+
 def execute(payload: DapTaskPayload) -> DapTaskOutput:
     """Do one task with the local model (or the mock) and return its files."""
     if os.getenv("LLM_MOCK", "0").strip() == "1":
@@ -105,17 +162,34 @@ def execute(payload: DapTaskPayload) -> DapTaskOutput:
                  for path in payload.target_files]
         return DapTaskOutput(summary=f"Mock output for: {payload.title}", files=files)
 
-    answer = chat(prompts.build_messages(payload), json_mode=True)  # RuntimeError: model down
-    data = _extract_json(answer.text)
-    files = [GeneratedFile(path=str(f.get("path", "")), content=clean_content(str(f.get("content", ""))))
-             for f in data.get("files", []) if isinstance(f, dict)]
-    return DapTaskOutput(
-        summary=str(data.get("summary") or payload.title),
-        files=files,
-        prompt_tokens=answer.prompt_tokens,
-        completion_tokens=answer.completion_tokens,
-        duration_ms=answer.duration_ms,
-    )
+    messages = prompts.build_messages(payload)
+    prompt_tokens = completion_tokens = duration_ms = 0
+    problem = ""
+    for round_number in range(1 + FIX_ROUNDS):
+        answer = chat(messages, json_mode=True)  # RuntimeError: model down
+        prompt_tokens += answer.prompt_tokens
+        completion_tokens += answer.completion_tokens
+        duration_ms += answer.duration_ms
+        try:
+            output = _read_answer(answer.text, payload)
+            check_output(payload, output)
+            problem = verify(payload, output) or ""
+        except (ValueError, json.JSONDecodeError) as exc:
+            problem = str(exc)
+        if not problem:
+            output.prompt_tokens, output.completion_tokens = prompt_tokens, completion_tokens
+            output.duration_ms = duration_ms
+            if round_number:
+                output.summary += f" (corrected {round_number}x)"
+            return output
+        logger.warning("Task %s, answer %d: %s", payload.title, round_number + 1, problem)
+        messages = [*messages, {"role": "assistant", "content": answer.text}, {
+            "role": "user",
+            "content": f"Your files have this problem:\n{problem}\n\nFix it. Answer again "
+                       "with the complete corrected files, in the same JSON shape, with the "
+                       "same paths and no Markdown fences.",
+        }]
+    raise ValueError(f"still wrong after {FIX_ROUNDS} corrections: {problem}")
 
 
 # ------------------------------------------------------------ the queue of A2A tasks
