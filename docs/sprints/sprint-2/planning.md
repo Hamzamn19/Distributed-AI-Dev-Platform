@@ -55,6 +55,124 @@ smoke run needs S2-01 (contract endpoints).
 9. Network table complete; every member reachable from the master over Tailscale. — #29
 10. Sprint 2 report filed; retrospective produces one change for Sprint 3. — #30
 
+## Week 2 checklist (written 23 October)
+
+Week 1 closed with every open card merged green (PRs #44–#51). Below is what
+is left to finish Sprint 2, in dependency order. Read your own part exactly;
+the contract values quoted here are the ones to code against.
+
+### 1. Baran — unblock the worker loop (first, everyone waits on this)
+
+- `GET /agents/{agent_id}/tasks/next` (contract endpoint table): worker
+  caller, `X-Agent-Token` header (shared agreement 3), returns **200 Task or
+  204** when the agent has nothing. Agree the pick rule with Eray before
+  writing tests: only `pending` tasks whose `depends_on` entries are
+  `completed` (FR-13), then the task is marked assigned to the asking agent.
+- `POST /tasks/{id}/result` (contract endpoint table): worker caller,
+  body **`TaskResult`** = `task_id, agent_id, success, summary,
+  files[{path, content}], error, duration_ms, tokens_used`, returns **200
+  Task**. Persist through Can's functions in `dap/master/db/results.py` /
+  `workspace.py` (`store_task_result`, `save_generated_files`,
+  `record_event`) — read `dap/master/db/RESULTS.md` and `WORKSPACE.md`
+  first; they define `run_id` and the retry behaviour.
+- Decide the retry policy with Can before wiring (review finding on #47):
+  a repeated attempt currently cannot rewrite files under the same `run_id`.
+  Cheapest rule: a new attempt gets a new `run_id`.
+- `workspace_root` needs a value: `dap/master/config.py` is a ready file
+  ("do not change without Okan"), so confirm with Okan — either a
+  `WORKSPACE_ROOT` setting through `config.py`/`.env`, or the plain
+  `workspace/` directory relative to the repository root. No path or address
+  hardcoded beyond that.
+- Endpoint tables in the contract label these two rows "Sprint 3"; the team
+  needs them in Sprint 2 (S2-03). Flagged to Okan with the other contract
+  items — code against the contract shapes now.
+
+### 2. Eray — lead the worker loop (S2-03), then your measurements
+
+- Loop behaviour is exactly the member-guide S2-03 list: poll `tasks/next`
+  every `POLL_INTERVAL_SEC`, run the local LLM (`chat`, `json_mode` per type
+  prompt), POST `TaskResult`, retry once on failure, **404 on heartbeat ⇒
+  re-register**, Ctrl+C clean shutdown, `busy/idle` transitions. The team
+  note under S2-03 makes this a team task: you lead `dap/worker/` code;
+  everyone else runs a worker and files issues.
+- Until Baran's two endpoints land, write against the contract shapes above
+  and integration-test after they merge (dependency in the Sprint backlog
+  section).
+- S2-04 remainder: fix the comment above the haystack in
+  `scripts/measure_model.py` (≈2 000 tokens; Ollama's default window is
+  2 048) and lead the measurement wave below.
+
+### 3. Everyone — run a worker and measure the models you have
+
+Worker on your PC (after the loop lands):
+
+1. Copy `.env.example` to `.env`: `AGENT_TOKEN` (same on all PCs), your
+   `AGENT_ID` / `AGENT_NAME` / `AGENT_OWNER` / `AGENT_ROLE_HINT`, and
+   `MASTER_URL=http://<Hamza's Tailscale IP>:8000`.
+2. `python -m dap.worker.main` from the repository root; leave it running;
+   report any failure as a GitHub issue (that is your part of S2-03).
+
+Measurements (S2-04, everyone — each member measures **every model they have
+locally**):
+
+1. Ollama running, `LLM_MOCK` unset or `0`, from the repository root:
+   `python scripts/measure_model.py --model <name>`
+2. If `<name>` is one of the models in `docs/agents.json`, store the scores
+   on that row: `python scripts/measure_model.py --model <name> --write <agent-id>`.
+3. Paste the printed per-question lines into `docs/models.md` (Results) —
+   that is what makes the numbers auditable.
+4. A model that is not in `docs/agents.json`: record the run in
+   `docs/models.md` only; do not invent rows (Okan owns the contract row set).
+5. Two members measuring the same model is a feature: compare the numbers
+   and note both runs (reproducibility check).
+
+### 4. Fatma — switch the interface to the real API
+
+- `frontend/src/api/client.ts`: set `USING_MOCK` to `false` once Baran's
+  endpoints are live; agents page, new-project form and task board then run
+  against the master. Keep `types.ts` frozen, all calls through `client.ts`,
+  English text, desktop + mobile widths.
+- Done when: success criterion 6 — `decompose → assign` visible live.
+
+### 5. Abdurrahman — finish S2-07 and S2-09
+
+- `SETUP.md` is currently **empty (0 bytes)**: write the Tailscale runbook —
+  shared account, `tailscale ip -4`, per-machine `MASTER_URL`, fallback note.
+- `scripts/seed_agents.py` must read `docs/agents.json` and register all six
+  via `POST /api/v1/agents/register` with `X-Agent-Token`; env: `MASTER_URL`,
+  `AGENT_TOKEN`. (It currently only writes `config/agents_registry.json`
+  instead of registering anything — `scripts/smoke_test.py` then reads that
+  file.)
+- `scripts/smoke_test.py`: one command covering health/register/project/
+  decompose/assign/tasks on `LLM_MOCK=1`, prints `SMOKE TEST PASSED` or the
+  failing step, exit 0/1.
+- CI green badge in `README.md`; confirm every member has a row in
+  `docs/network-test.md` (7 machines listed today).
+
+### 6. Can — support (no S2-05 code left)
+
+- Pair with Baran on the results wiring (`RESULTS.md` / `WORKSPACE.md`),
+  settle the `run_id` retry rule with him, and measure any models you have.
+
+### 7. Okan — contract items (Hamza's message)
+
+- The five new repository signatures, `task_results` → sprint 2, accept the
+  hybrid `workspace/<project_id>/<run_id>/`, stale `docs/database.md` line,
+  the two endpoint rows' sprint label, open questions 1–4 of the member
+  guide, and the `context_window` question for S2-02's overflow rule (add to
+  the frozen schemas now or move the rule to Sprint 3).
+
+### 8. Hamza — S2-10
+
+- Burndown sheet, dailies 2–3×/week, report + retrospective with one change
+  for Sprint 3.
+
+### Closing checkpoint — Thursday 29 October (30 minutes)
+
+- Flow register → decompose → assign from `dap/` paths on `LLM_MOCK=1`,
+  one look at the UI, **at least two live workers** completing a task
+  (team agreement of 22 October), smoke test green on the master PC.
+
 ## Meeting notes
 
 - Date: 15 October 2026, ~11:10 (Google Meet), Sprint 2 planning and distribution.
