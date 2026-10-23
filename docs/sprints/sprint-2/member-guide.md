@@ -94,6 +94,10 @@ Ready files (do not change without Okan): `dap/shared/enums.py`, `dap/shared/sch
    (files/summary/tokens/duration), retry once on failure; 404 on heartbeat ⇒ re-register;
    Ctrl+C clean shutdown; `busy/idle` transitions. Done when: one worker on a second PC
    completes a task end-to-end and its files land in `workspace/`.
+   Team note (23 October, agreed by the team): S2-03 is a task for everyone.
+   Eray leads the code in `dap/worker/`; every other member runs a worker on
+   their own PC against the master over Tailscale and reports failures as
+   issues. Thursday checkpoint: at least two live workers completing tasks.
 
 ## Fatma — S2-06
 
