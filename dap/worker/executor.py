@@ -3,9 +3,10 @@
 Owner: Eray - Sprint 3.
 
 For each task: build the prompt (prompts.py), ask the local model with
-chat(json_mode=True), read {"summary", "files"} from the answer and check that
-every file is one of the task's target_files. Any error makes the task
-TASK_STATE_FAILED with a message that explains it.
+chat(json_mode=True), read {"summary", "files"} from the answer (Markdown code
+fences around a file's content are removed) and check the files: exactly the
+task's target_files, none empty, Python files without syntax errors. Any error
+makes the task TASK_STATE_FAILED with a message that explains it.
 
 With LLM_MOCK=1 no model is asked: every target file gets a fixed, working
 content (MOCK_FILES), so the whole flow can be tested without Ollama.
@@ -51,6 +52,10 @@ def _now() -> datetime:
 def _extract_json(text: str) -> dict:
     """Parse the model's JSON answer, tolerating code fences or stray prose."""
     text = text.strip()
+    try:  # a plain JSON answer may itself contain ``` inside a file's content
+        return json.loads(text)
+    except json.JSONDecodeError:
+        pass
     fenced = re.search(r"```(?:json)?\s*(.*?)```", text, re.DOTALL)
     if fenced:
         text = fenced.group(1).strip()
@@ -63,8 +68,17 @@ def _extract_json(text: str) -> dict:
         return json.loads(text[start : end + 1])
 
 
+_FENCE = re.compile(r"^\s*```[\w+.-]*[ \t]*\r?\n(.*?)\r?\n?```\s*$", re.DOTALL)
+
+
+def clean_content(text: str) -> str:
+    """Remove the Markdown code fence a model may wrap around a whole file."""
+    match = _FENCE.match(text)
+    return match.group(1) if match else text
+
+
 def check_output(payload: DapTaskPayload, output: DapTaskOutput) -> None:
-    """Every target file is written, and nothing else. Raises ValueError."""
+    """Exactly the target files, none empty, Python that compiles. Raises ValueError."""
     allowed = set(payload.target_files)
     written = [file.path for file in output.files]
     outside = [path for path in written if path not in allowed]
@@ -73,6 +87,14 @@ def check_output(payload: DapTaskPayload, output: DapTaskOutput) -> None:
     missing = [path for path in payload.target_files if path not in written]
     if missing:
         raise ValueError(f"the model did not write: {', '.join(missing)}")
+    for file in output.files:
+        if not file.content.strip():
+            raise ValueError(f"empty file: {file.path}")
+        if file.path.endswith(".py"):
+            try:
+                compile(file.content, file.path, "exec")
+            except SyntaxError as exc:
+                raise ValueError(f"syntax error in {file.path}, line {exc.lineno}: {exc.msg}") from None
 
 
 def execute(payload: DapTaskPayload) -> DapTaskOutput:
@@ -85,7 +107,7 @@ def execute(payload: DapTaskPayload) -> DapTaskOutput:
 
     answer = chat(prompts.build_messages(payload), json_mode=True)  # RuntimeError: model down
     data = _extract_json(answer.text)
-    files = [GeneratedFile(path=str(f.get("path", "")), content=str(f.get("content", "")))
+    files = [GeneratedFile(path=str(f.get("path", "")), content=clean_content(str(f.get("content", ""))))
              for f in data.get("files", []) if isinstance(f, dict)]
     return DapTaskOutput(
         summary=str(data.get("summary") or payload.title),

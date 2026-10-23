@@ -58,7 +58,13 @@ def build_messages(payload: DapTaskPayload) -> list[dict]:
         "one small web application together. Each agent writes only its own files.\n"
         f"{GUIDE.get(payload.type, 'Write the files of your task.')}\n"
         f"You may write only these files: {allowed}. Write every one of them completely.\n"
-        "Keep the names that the template comments and the other files rely on.\n"
+        "Rules for the files:\n"
+        "- Start from the template: keep its import lines and every line it marks as "
+        "required (for example the last line of backend/main.py), and fill in the rest.\n"
+        "- Use exactly the function names, routes and element ids of the files you get "
+        "from the other agents; do not invent other names.\n"
+        '- "content" is the whole file as plain source code: no Markdown, no ``` fences.\n'
+        "- Keep the names that the template comments and the other files rely on.\n"
         f"{ANSWER_FORMAT}"
     )
     parts = [

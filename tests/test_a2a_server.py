@@ -203,3 +203,32 @@ def test_prompt_contains_requirement_task_targets_and_dependencies():
     assert '"files"' in system["content"]
     assert "A library system" in user["content"]
     assert "def list_items(): ..." in user["content"]
+
+
+def test_markdown_fences_around_a_file_are_removed(monkeypatch):
+    monkeypatch.setenv("LLM_MOCK", "0")
+    fenced = "```python\nimport sqlite3\n```"
+    answer = '{"summary": "s", "files": [{"path": "backend/database.py", "content": %s}]}' % (
+        __import__("json").dumps(fenced))
+    monkeypatch.setattr(executor_module, "chat", lambda messages, json_mode: LLMResponse(
+        text=answer, prompt_tokens=1, completion_tokens=1, duration_ms=1))
+    from dap.shared.schemas import DapTaskPayload
+
+    output = executor_module.execute(DapTaskPayload.model_validate(PAYLOAD))
+    assert output.files[0].content == "import sqlite3"
+
+
+@pytest.mark.parametrize("content,reason", [
+    ("   \n", "empty file: backend/database.py"),
+    ("def broken(:\n    pass\n", "syntax error in backend/database.py, line 1"),
+])
+def test_empty_or_broken_python_fails_the_task(settings, content, reason):
+    def output(payload):
+        return DapTaskOutput(summary="x", files=[GeneratedFile(path="backend/database.py",
+                                                               content=content)])
+
+    client, _ = _client(settings, Executor(run=output))
+    task_id = client.post("/message:send", json=_message(), headers=HEADERS).json()["task"]["id"]
+    failed = _wait(client, task_id)
+    assert failed["status"]["state"] == "TASK_STATE_FAILED"
+    assert reason in failed["status"]["message"]["parts"][0]["text"]
