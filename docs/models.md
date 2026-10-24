@@ -33,6 +33,10 @@ ollama pull <model>
 python scripts/measure_model.py --model <model>
 ```
 
+The script calls the OpenAI-compatible server named by `LLM_BASE_URL`, so
+llama.cpp's `llama-server` works as well: point `LLM_BASE_URL` at its `/v1`
+endpoint and pass any label with `--model` (see the gemma4-26b-a4b run below).
+
 The last lines show the result, for example:
 
 ```text
@@ -47,8 +51,32 @@ Copy the three `AGENT_CAP_*` lines the script prints into the worker's `.env`.
 | Agent | Model | coding | reasoning | context | Measured on | Date |
 | --- | --- | --- | --- | --- | --- | --- |
 | agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | Eray-PC | 2026-10-21 |
+| agent-hamza | gemma4-26b-a4b | 100 | 100 | 100 | Hamza-PC | 2026-10-24 |
 | agent-fatma | to be decided | | | | | |
 | agent-can | to be decided | | | | | |
 | agent-abdurrahman | to be decided | | | | | |
 | agent-okan | to be decided | | | | | |
+
+### Extra run: gemma4-26b-a4b (Hamza-PC, 24 October)
+
+Measured outside the six-row set: the model is `gemma-4-26B-A4B-it` (MoE, 4B
+active parameters) as GGUF `UD-IQ2_XXS`, served by llama.cpp `llama-server`
+(OpenAI-compatible API on `127.0.0.1:8080`, not Ollama) with context 131072,
+KV cache `q4_0`, flash attention, ngram speculative decoding and 12 threads.
+
+Per-question result (same five questions as every other run):
+
+| Question | Outcome | Duration |
+| --- | --- | --- |
+| coding `is_palindrome` | 6/6 unit tests | 8.4 s |
+| coding `merge_intervals` | 6/6 unit tests | 42.1 s |
+| reasoning `bat_and_ball` | correct (`5`) | 4.5 s |
+| reasoning `race_order` | correct (`Dana`) | 5.2 s |
+| context needle | found (`4817`) | 3.6 s |
+| **totals** | 12/12 tests, 2/2 answers, needle found | **3.1 min** |
+
+Server settings matter for the coding score: the same model and questions on a
+plain Ollama server (context 2048, no flash attention, no speculative
+decoding) scored `coding=50` because `merge_intervals` failed 0/6. Measure a
+model with the server configuration that will also run it in the demo.
 | agent-hamza | to be decided | | | | | |
