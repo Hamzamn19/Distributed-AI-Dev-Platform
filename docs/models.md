@@ -61,6 +61,92 @@ Fair-use rules for the numbers:
 in `docs/agents.json` (the tokens are never written there). Copy the three
 `AGENT_CAP_*` lines the script prints into the worker's `.env`.
 
+## Serving a model and connecting to it
+
+Every LLM call in this platform — the master's `decompose`/`assign`, the
+worker's task execution and the measurement script — goes through
+`dap/shared/llm_client.py` to an OpenAI-compatible server named by
+`LLM_BASE_URL`. Any such server works: Ollama (contract section 4) or
+llama.cpp's `llama-server`, as on Hamza-PC.
+
+### Start the server
+
+Example from Hamza-PC (llama.cpp, the gemma4-26b-a4b model):
+
+```bash
+local-stack/llama.cpp/bin/llama-server \
+  -m local-stack/models/gemma4-26b-a4b/gemma-4-26B-A4B-it-UD-IQ2_XXS.gguf \
+  -ngl 999 -c 131072 -ctk q4_0 -ctv q4_0 -fa on -b 1024 -ub 256 \
+  --threads 12 --threads-batch 12 --jinja --spec-type ngram-mod -np 1 \
+  --host 127.0.0.1 --port 8080
+```
+
+Check that it is ready (both must answer):
+
+```bash
+curl http://127.0.0.1:8080/health          # {"status":"ok"}
+curl http://127.0.0.1:8080/v1/models       # lists the loaded model
+```
+
+With Ollama the same role is played by `ollama serve` on port `11434`.
+
+The example binds `127.0.0.1`, so **only that PC can call the model**. Other
+PCs never call it directly: the master never calls a worker (contract
+section 2), each PC runs its own server and its own worker, and every
+worker PC runs a different local model (contract section 10).
+
+### How the platform talks to it
+
+One OpenAI-compatible POST, from anywhere in the codebase:
+
+```bash
+curl http://127.0.0.1:8080/v1/chat/completions \
+  -H 'Content-Type: application/json' \
+  -d '{"model": "gemma4-26b-a4b", "messages": [{"role": "user", "content": "Say OK."}]}'
+```
+
+The addresses and names come only from `.env` (`.env.example` lists them all):
+
+| Variable | Value for this server |
+| --- | --- |
+| `LLM_BASE_URL` | `http://127.0.0.1:8080/v1` (Ollama: `http://localhost:11434/v1`) |
+| `LLM_API_KEY` | `none` (llama-server ignores it; Ollama uses `ollama`) |
+| `LLM_MODEL` | `gemma4-26b-a4b` — any label the server accepts |
+| `LLM_MOCK` | `0` — `1` returns a fixed fake answer and calls nothing |
+
+### This PC as the master
+
+Set the four variables above in `.env`, then start the master
+(`uvicorn dap.master.main:app --port 8000`). `POST /projects/{id}/decompose`
+and `/assign` now reason with this PC's own model.
+
+### This PC as a worker (task delegation)
+
+The master never calls this model over the network; it delegates a task to
+this PC, and the worker answers with the local model. The worker's `.env`:
+
+```bash
+MASTER_URL=http://<master Tailscale IP>:8000   # contract section 2
+AGENT_TOKEN=<the shared team token>            # same value on all seven PCs
+AGENT_ID=agent-hamza
+AGENT_NAME=Hamza-PC
+AGENT_OWNER=Hamza
+AGENT_ROLE_HINT=backend                        # one of: frontend, backend, database, testing, integration, code_review
+AGENT_CAP_CODING=100                           # from the measurement run
+AGENT_CAP_REASONING=100
+AGENT_CAP_CONTEXT=100
+LLM_BASE_URL=http://127.0.0.1:8080/v1          # the local model, as above
+LLM_API_KEY=none
+LLM_MODEL=gemma4-26b-a4b
+```
+
+The delegation flow it joins (master side already merged): register with
+`POST /api/v1/agents/register`, pull work with
+`GET /api/v1/agents/{agent_id}/tasks/next` (200 with a task, 204 when none
+are ready), execute it with the local model, and post the file back with
+`POST /api/v1/tasks/{id}/result`. The worker loop that runs this flow is
+Eray's Sprint 2 card; this section is the configuration it will read.
+
 ## Results
 
 | Agent | Model | coding | reasoning | context | Speed (tok/s) | Measured on | Date |
