@@ -13,7 +13,7 @@ temperature 0 so a second run gives the same answer.
 | --- | --- | --- | --- |
 | coding | 2: write `is_palindrome(s)` and `merge_intervals(intervals)` | 6 unit tests each, run in a separate Python process (10 s limit) | passed tests / 12 × 100 |
 | reasoning | 2: "bat and ball" price question, five-runner order question | the expected answer (`5`, `Dana`) | correct / 2 × 100 |
-| context | 1: find an access code hidden at sentence 64 of a 101-sentence delivery log (about 2 000 tokens) | the expected code `4817` | 100 when found, otherwise 0 |
+| context | 1: find an access code hidden at sentence 64 of a 101-sentence delivery log (about 2 400 tokens; the exact count depends on the model's tokenizer) | the expected code `4817` | 100 when found, otherwise 0 |
 
 The questions, the test cases and the long text are fixed in the script, so
 every model gets exactly the same input. The long text is kept below Ollama's
@@ -151,7 +151,7 @@ Eray's Sprint 2 card; this section is the configuration it will read.
 
 | Agent | Model | coding | reasoning | context | Speed (tok/s) | Measured on | Date |
 | --- | --- | --- | --- | --- | --- | --- | --- |
-| agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | — | Eray-PC | 2026-10-21 |
+| agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | 6.0 | Eray-PC | 2026-10-24 |
 | agent-hamza | gemma4-26b-a4b | 100 | 100 | 100 | 89.6 | Hamza-PC | 2026-10-24 |
 | agent-fatma | to be decided | | | | | | |
 | agent-can | to be decided | | | | | | |
@@ -180,8 +180,8 @@ Per-question result (same five questions as every other run):
 | **totals** | 12/12 tests, 2/2 answers, needle found | **3.0 min** | **2 765 / 5 354 (~89.6 tok/s)** |
 
 The needle question alone costs 2 431 prompt tokens — the haystack is about
-2 400 tokens under this tokenizer (the script comment says "about 2 000";
-the real figure depends on the model).
+2 400 tokens under this tokenizer; the figure depends on the model, and the
+script comment now says so.
 
 Server settings matter for the coding score: the same model and questions on a
 plain Ollama server (context 2048, no flash attention, no speculative
