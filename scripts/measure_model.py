@@ -113,7 +113,10 @@ NEEDLE_ANSWER = "4817"
 CONTEXT_QUESTION = (
     "What is the access code for the north gate? Answer with only the number."
 )
-HAYSTACK_SENTENCES = 100  # about 2 500 tokens: fits Ollama's default context window
+# About 2 400 prompt tokens (measured with gemma4-26b-a4b on 24 October); the
+# exact count depends on each model's tokenizer. Serve the model with a context
+# window of at least 4096, or the server may cut the text silently.
+HAYSTACK_SENTENCES = 100
 NEEDLE_POSITION = 63
 
 
