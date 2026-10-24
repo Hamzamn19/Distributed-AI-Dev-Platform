@@ -208,33 +208,61 @@ def _ask(chat, prompt: str):
     return chat([{"role": "user", "content": prompt}], temperature=TEMPERATURE)
 
 
+def token_line(tokens: dict) -> str:
+    """One TOKENS line: totals plus the speed the whole run averaged.
+
+    tok/s counts completion tokens over the summed call time. Token counts
+    belong to the model's own tokenizer, so compare them only between runs
+    of the same model (for example the same model on two servers).
+    """
+    total = tokens["prompt"] + tokens["completion"]
+    seconds = tokens["duration_ms"] / 1000
+    rate = tokens["completion"] / seconds if seconds else 0.0
+    return f"TOKENS  prompt={tokens['prompt']} completion={tokens['completion']} " \
+           f"total={total}  ~{rate:.1f} tok/s"
+
+
 def measure(chat, log=print) -> dict:
-    """Ask the five questions through chat() and return the three scores."""
+    """Ask the five questions through chat() and return scores plus tokens."""
     passed = total = 0
+    tokens = {"prompt": 0, "completion": 0, "duration_ms": 0}
+
+    def _tally(reply):
+        tokens["prompt"] += reply.prompt_tokens
+        tokens["completion"] += reply.completion_tokens
+        tokens["duration_ms"] += reply.duration_ms
+
     for task in CODING_TASKS:
         reply = _ask(chat, task["prompt"])
+        _tally(reply)
         ok = run_unit_tests(extract_code(reply.text), task["name"], task["cases"])
         passed += ok
         total += len(task["cases"])
-        log(f"  coding    {task['name']:<16} {ok}/{len(task['cases'])} tests   {reply.duration_ms} ms")
+        log(f"  coding    {task['name']:<16} {ok}/{len(task['cases'])} tests   "
+            f"{reply.duration_ms} ms   tokens {reply.prompt_tokens}/{reply.completion_tokens}")
 
     correct = 0
     for task in REASONING_TASKS:
         reply = _ask(chat, task["prompt"])
+        _tally(reply)
         ok = check_reasoning(task, reply.text)
         correct += ok
-        log(f"  reasoning {task['name']:<16} {'correct' if ok else 'wrong':<9}  {reply.duration_ms} ms"
+        log(f"  reasoning {task['name']:<16} {'correct' if ok else 'wrong':<9}  "
+            f"{reply.duration_ms} ms   tokens {reply.prompt_tokens}/{reply.completion_tokens}"
             f"   answer: {reply.text.strip()[:60]!r}")
 
     reply = _ask(chat, context_prompt())
+    _tally(reply)
     found = check_context(reply.text)
-    log(f"  context   {'needle':<16} {'found' if found else 'missed':<9}  {reply.duration_ms} ms"
+    log(f"  context   {'needle':<16} {'found' if found else 'missed':<9}  "
+        f"{reply.duration_ms} ms   tokens {reply.prompt_tokens}/{reply.completion_tokens}"
         f"   answer: {reply.text.strip()[:60]!r}")
 
     return {
         "coding": round(passed / total * 100),
         "reasoning": round(correct / len(REASONING_TASKS) * 100),
         "context": 100 if found else 0,
+        "tokens": tokens,
     }
 
 
@@ -285,13 +313,16 @@ def main() -> None:
 
     print(f"\nRESULT  {model}  coding={scores['coding']}  reasoning={scores['reasoning']}  "
           f"context={scores['context']}   ({minutes:.1f} min)")
+    print(token_line(scores["tokens"]))
     print("\nFor the worker's .env:")
     print(f"AGENT_CAP_CODING={scores['coding']}")
     print(f"AGENT_CAP_REASONING={scores['reasoning']}")
     print(f"AGENT_CAP_CONTEXT={scores['context']}")
 
     if args.write:
-        write_scores(args.write, model, scores)
+        # agents.json holds the three capability scores only, never the tokens.
+        capabilities = {key: scores[key] for key in ("coding", "reasoning", "context")}
+        write_scores(args.write, model, capabilities)
         print(f"\nSaved to docs/agents.json for {args.write}.")
 
 
