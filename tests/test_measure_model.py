@@ -28,8 +28,9 @@ def merge_intervals(intervals):
 ```"""
 
 
-def _reply(text: str) -> LLMResponse:
-    return LLMResponse(text=text, prompt_tokens=0, completion_tokens=0, duration_ms=1)
+def _reply(text: str, prompt: int = 0, completion: int = 0, duration: int = 1) -> LLMResponse:
+    return LLMResponse(text=text, prompt_tokens=prompt, completion_tokens=completion,
+                       duration_ms=duration)
 
 
 def test_extract_code_takes_the_python_block():
@@ -85,12 +86,45 @@ def test_measure_gives_full_scores_for_perfect_answers():
             return _reply("Dana")
         return _reply("4817")
 
-    assert mm.measure(fake_chat, log=lambda _: None) == {"coding": 100, "reasoning": 100, "context": 100}
+    assert mm.measure(fake_chat, log=lambda _: None) == {
+        "coding": 100, "reasoning": 100, "context": 100,
+        "tokens": {"prompt": 0, "completion": 0, "duration_ms": 5},
+    }
 
 
 def test_measure_gives_zero_for_useless_answers():
     scores = mm.measure(lambda messages, *, temperature: _reply("no idea"), log=lambda _: None)
-    assert scores == {"coding": 0, "reasoning": 0, "context": 0}
+    assert scores == {
+        "coding": 0, "reasoning": 0, "context": 0,
+        "tokens": {"prompt": 0, "completion": 0, "duration_ms": 5},
+    }
+
+
+def test_measure_totals_tokens_from_every_answer():
+    def fake_chat(messages, *, temperature):
+        return _reply("4817", prompt=10, completion=20, duration=100)
+
+    scores = mm.measure(fake_chat, log=lambda _: None)
+    assert scores["tokens"] == {"prompt": 50, "completion": 100, "duration_ms": 500}
+
+
+def test_measure_logs_tokens_on_every_question_line():
+    lines = []
+
+    def fake_chat(messages, *, temperature):
+        return _reply("4817", prompt=10, completion=20, duration=100)
+
+    mm.measure(fake_chat, log=lines.append)
+    question_lines = [line for line in lines if "tokens" in line]
+    assert len(question_lines) == 5  # 2 coding + 2 reasoning + 1 context
+    assert all("tokens 10/20" in line for line in question_lines)
+
+
+def test_token_line_shows_totals_and_speed():
+    tokens = {"prompt": 50, "completion": 100, "duration_ms": 500}
+    assert mm.token_line(tokens) == "TOKENS  prompt=50 completion=100 total=150  ~200.0 tok/s"
+    # A server that reports no usage must not crash the rate.
+    assert "0.0 tok/s" in mm.token_line({"prompt": 0, "completion": 0, "duration_ms": 0})
 
 
 def test_format_keeps_agents_json_layout():

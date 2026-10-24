@@ -37,25 +37,43 @@ The script calls the OpenAI-compatible server named by `LLM_BASE_URL`, so
 llama.cpp's `llama-server` works as well: point `LLM_BASE_URL` at its `/v1`
 endpoint and pass any label with `--model` (see the gemma4-26b-a4b run below).
 
-The last lines show the result, for example:
+The last lines show the result, for example (the script prints the same two
+lines for every run; every question line above them also shows its tokens as
+`tokens <prompt>/<completion>`):
 
 ```text
 RESULT  qwen2.5-coder:7b  coding=100  reasoning=50  context=100   (2.3 min)
+TOKENS  prompt=2765 completion=5354 total=8119  ~89.6 tok/s
 ```
 
-`--write <agent_id>` also stores the model and the scores in `docs/agents.json`.
-Copy the three `AGENT_CAP_*` lines the script prints into the worker's `.env`.
+Fair-use rules for the numbers:
+
+- `tok/s` is completion tokens divided by the summed time of the five calls;
+  it is the one speed figure that compares across models.
+- Token counts come from each model's own tokenizer, so the same text is a
+  different number of tokens for every model. Compare token counts only
+  between runs of the **same model** (for example the same model on two
+  servers); never between different models.
+- Every model is measured with the same five questions and the same server
+  configuration that will run it in the demo.
+
+`--write <agent_id>` also stores the model and the three capability scores
+in `docs/agents.json` (the tokens are never written there). Copy the three
+`AGENT_CAP_*` lines the script prints into the worker's `.env`.
 
 ## Results
 
-| Agent | Model | coding | reasoning | context | Measured on | Date |
-| --- | --- | --- | --- | --- | --- | --- |
-| agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | Eray-PC | 2026-10-21 |
-| agent-hamza | gemma4-26b-a4b | 100 | 100 | 100 | Hamza-PC | 2026-10-24 |
-| agent-fatma | to be decided | | | | | |
-| agent-can | to be decided | | | | | |
-| agent-abdurrahman | to be decided | | | | | |
-| agent-okan | to be decided | | | | | |
+| Agent | Model | coding | reasoning | context | Speed (tok/s) | Measured on | Date |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | — | Eray-PC | 2026-10-21 |
+| agent-hamza | gemma4-26b-a4b | 100 | 100 | 100 | 89.6 | Hamza-PC | 2026-10-24 |
+| agent-fatma | to be decided | | | | | | |
+| agent-can | to be decided | | | | | | |
+| agent-abdurrahman | to be decided | | | | | | |
+| agent-okan | to be decided | | | | | | |
+
+Rows marked `—` were measured before the script printed tokens (21 October);
+re-run them once to fill the speed column.
 
 ### Extra run: gemma4-26b-a4b (Hamza-PC, 24 October)
 
@@ -66,17 +84,20 @@ KV cache `q4_0`, flash attention, ngram speculative decoding and 12 threads.
 
 Per-question result (same five questions as every other run):
 
-| Question | Outcome | Duration |
-| --- | --- | --- |
-| coding `is_palindrome` | 6/6 unit tests | 8.4 s |
-| coding `merge_intervals` | 6/6 unit tests | 42.1 s |
-| reasoning `bat_and_ball` | correct (`5`) | 4.5 s |
-| reasoning `race_order` | correct (`Dana`) | 5.2 s |
-| context needle | found (`4817`) | 3.6 s |
-| **totals** | 12/12 tests, 2/2 answers, needle found | **3.1 min** |
+| Question | Outcome | Duration | Tokens prompt/completion |
+| --- | --- | --- | --- |
+| coding `is_palindrome` | 6/6 unit tests | 7.7 s | 87 / 572 |
+| coding `merge_intervals` | 6/6 unit tests | 40.8 s | 125 / 3 934 |
+| reasoning `bat_and_ball` | correct (`5`) | 4.4 s | 61 / 336 |
+| reasoning `race_order` | correct (`Dana`) | 5.1 s | 61 / 395 |
+| context needle | found (`4817`) | 1.7 s | 2 431 / 117 |
+| **totals** | 12/12 tests, 2/2 answers, needle found | **3.0 min** | **2 765 / 5 354 (~89.6 tok/s)** |
+
+The needle question alone costs 2 431 prompt tokens — the haystack is about
+2 400 tokens under this tokenizer (the script comment says "about 2 000";
+the real figure depends on the model).
 
 Server settings matter for the coding score: the same model and questions on a
 plain Ollama server (context 2048, no flash attention, no speculative
 decoding) scored `coding=50` because `merge_intervals` failed 0/6. Measure a
 model with the server configuration that will also run it in the demo.
-| agent-hamza | to be decided | | | | | |
