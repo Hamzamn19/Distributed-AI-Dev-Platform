@@ -187,3 +187,23 @@ Server settings matter for the coding score: the same model and questions on a
 plain Ollama server (context 2048, no flash attention, no speculative
 decoding) scored `coding=50` because `merge_intervals` failed 0/6. Measure a
 model with the server configuration that will also run it in the demo.
+
+### Extra run: qwen3:4b (Baran-PC, 25 October)
+
+Measured on the master PC (MacBook Pro, Apple M5, Ollama). Baran has no row in
+`docs/agents.json`, so the run is recorded here only (no `--write`).
+
+```
+RESULT: qwen3:4b | coding=100 | reasoning=100 | context=100 (4.1 min)
+TOKENS: prompt=2929 completion=10331 total=13260 ~41.8 tok/s
+AGENT_CAP_CODING=100
+AGENT_CAP_REASONING=100
+AGENT_CAP_CONTEXT=100
+```
+
+The per-question lines of this run were not pasted yet; add them from the
+script output so the numbers are auditable.
+### Extra run: qwen3:4b (Baran-PC, 25 October)
+
+Measured on the master PC (MacBook Pro, Apple M5, Ollama). Baran has no row in
+`docs/agents.json`, so the run is recorded here only (no `--write`).

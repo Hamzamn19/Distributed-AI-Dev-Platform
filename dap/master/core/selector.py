@@ -47,7 +47,8 @@ def score(task: Task, agent: Agent, queued: int = 0) -> tuple[float, str]:
     total = coding + reasoning + context + role - queue
     reason = (
         f"S={total:.1f} (coding {coding:.1f}, reasoning {reasoning:.1f}, "
-        f"context {context:.1f}, role +{role}, queue -{queue})"
+        f"context {context:.1f}, role +{role}, queue -{queue}; "
+        f"C={caps.coding} R={caps.reasoning} X={caps.context})"
     )
     return total, reason
 
