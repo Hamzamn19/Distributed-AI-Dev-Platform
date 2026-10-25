@@ -203,3 +203,7 @@ AGENT_CAP_CONTEXT=100
 
 The per-question lines of this run were not pasted yet; add them from the
 script output so the numbers are auditable.
+### Extra run: qwen3:4b (Baran-PC, 25 October)
+
+Measured on the master PC (MacBook Pro, Apple M5, Ollama). Baran has no row in
+`docs/agents.json`, so the run is recorded here only (no `--write`).
