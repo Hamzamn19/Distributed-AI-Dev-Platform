@@ -22,11 +22,9 @@ cp .env.example .env     # set VITE_API_BASE_URL to the master address
 npm run dev
 ```
 
-Open http://localhost:5173.
+Open http://localhost:5173. The master must be running at `VITE_API_BASE_URL`.
 
 ## Status
 
 Sprint 2 (S2-06): agents page, new-project form and task board are finished and
-use sample data (agents/projects in `src/api/mock.ts`, tasks inline in
-`src/api/client.ts`, "Sample data" badge). When the real API is wired
-(`USING_MOCK = false`), `mock.ts` is deleted.
+talk to the live master API (`/api/v1`). There is no sample data left.
