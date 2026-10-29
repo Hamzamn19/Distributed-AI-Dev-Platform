@@ -43,6 +43,20 @@ RESULT  qwen2.5-coder:7b  coding=100  reasoning=50  context=100   (2.3 min)
 `--write <agent_id>` also stores the model and the scores in `docs/agents.json`.
 Copy the three `AGENT_CAP_*` lines the script prints into the worker's `.env`.
 
+## The master's model
+
+The master uses its model only to decompose the requirement into tasks; it is not
+an agent and has no capability scores. The master's model is Gemma 4 26B A4B:
+
+| Where | Model name | Runtime | `LLM_BASE_URL` on the master |
+| --- | --- | --- | --- |
+| Baran's PC (the master PC) | `gemma4:26b` | Ollama | `http://localhost:11434/v1` |
+| Tailnet test with Okan as master (29 October) | `gemma-4-26b-a4b-iq2_xxs` (GGUF on Hamza's PC) | llama.cpp `llama-server` | `http://<Hamza's Tailscale IP>:8080/v1` |
+
+Both are the same model (Hamza's file is a smaller quantization of it), so they
+decompose alike. `LLM_THINK=0` keeps it from thinking first: a decomposition then
+takes about 10 seconds. agent-hamza runs the same model as a worker.
+
 ## Results
 
 Same values as `docs/agents.json`. "estimate" means the scores were not measured yet.
@@ -51,7 +65,7 @@ Same values as `docs/agents.json`. "estimate" means the scores were not measured
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | agent-fatma | qwen3:4b | 50 | 50 | 50 | estimate |  |  |
 | agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | measured | Eray-PC | 2026-10-21 |
-| agent-can | qwen3:4b | 50 | 50 | 50 | estimate |  |  |
+| agent-can | qwen2.5-coder:7b | 100 | 50 | 100 | measured (same model as agent-eray) | Eray-PC | 2026-10-21 |
 | agent-abdurrahman | qwen3:4b | 50 | 50 | 50 | estimate |  |  |
-| agent-okan | qwen3:4b | 60 | 60 | 50 | estimate |  |  |
-| agent-hamza | qwen3:4b | 50 | 50 | 50 | estimate |  |  |
+| agent-okan | qwen2.5:7b | 60 | 60 | 50 | estimate |  |  |
+| agent-hamza | gemma-4-26b-a4b-iq2_xxs (llama.cpp) | 50 | 50 | 50 | estimate |  |  |
