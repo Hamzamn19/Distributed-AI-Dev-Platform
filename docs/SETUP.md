@@ -85,7 +85,17 @@ the whole decompose/assign flow and prints `SMOKE TEST PASSED`.
 
 ## 6. Start a worker
 
-On a worker PC (or in a second terminal on the master PC):
+Write the worker's `.env` with one command. Only the team token is shared, privately,
+by the master's owner; the script asks for it and takes everything else from
+`docs/agents.json` and from this PC's Tailscale address:
+
+```bash
+python scripts/make_env.py --agent agent-<you> --master http://<master Tailscale IP>:8000 --mock
+```
+
+`--mock` runs without a model (first network test); leave it out to use the real model
+(`--model <name>` if yours differs from `docs/agents.json`). Then start the worker
+(or in a second terminal on the master PC):
 
 ```bash
 python -m dap.worker.main

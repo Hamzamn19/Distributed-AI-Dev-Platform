@@ -98,3 +98,44 @@ def test_check_connection_names_the_likely_fix(monkeypatch):
     assert "not running" in not_running["master reaches this worker"][1]
     firewall = _check(monkeypatch, card_status=502)["master reaches this worker"]
     assert not firewall[0] and "Firewall" in firewall[1]
+
+
+def test_make_env_writes_a_worker_env_from_agents_json(tmp_path):
+    make_env = _load("make_env")
+    out = tmp_path / ".env"
+    code = make_env.main(["--agent", "agent-hamza", "--master", "http://100.64.0.1:8000/",
+                          "--mock"], token="team-secret", output=out,
+                         tailscale_ip=lambda: "100.64.0.9")
+    assert code == 0
+    from dotenv import dotenv_values
+
+    values = dotenv_values(out)
+    assert values["AGENT_TOKEN"] == "team-secret"
+    assert values["MASTER_URL"] == "http://100.64.0.1:8000"
+    assert values["AGENT_ID"] == "agent-hamza" and values["AGENT_OWNER"] == "Hamza"
+    assert values["LLM_MOCK"] == "1"
+    assert values["WORKER_PUBLIC_URL"] == "http://100.64.0.9:9000"
+
+
+def test_make_env_does_not_overwrite_without_force_and_keeps_a_backup(tmp_path):
+    make_env = _load("make_env")
+    out = tmp_path / ".env"
+    out.write_text("OLD=1\n", encoding="utf-8")
+    args = ["--agent", "agent-can", "--master", "http://100.64.0.1:8000"]
+    assert make_env.main(args, token="t", output=out, tailscale_ip=lambda: None) == 1
+    assert out.read_text(encoding="utf-8") == "OLD=1\n"
+    assert make_env.main(args + ["--force", "--model", "qwen2.5:7b"], token="t", output=out,
+                         tailscale_ip=lambda: None) == 0
+    assert (tmp_path / ".env.bak").read_text(encoding="utf-8") == "OLD=1\n"
+    text = out.read_text(encoding="utf-8")
+    assert "LLM_MODEL=qwen2.5:7b" in text and "LLM_MOCK=0" in text
+    assert "WORKER_PUBLIC_URL=\n" in text
+
+
+def test_make_env_refuses_unknown_agents_and_empty_tokens(tmp_path):
+    make_env = _load("make_env")
+    out = tmp_path / ".env"
+    master = ["--master", "http://100.64.0.1:8000"]
+    assert make_env.main(["--agent", "agent-nobody", *master], token="t", output=out) == 1
+    assert make_env.main(["--agent", "agent-can", *master], token="  ", output=out) == 1
+    assert not out.exists()

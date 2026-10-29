@@ -18,8 +18,9 @@ from dap.shared.schemas import AgentRegister, Capabilities
 
 logger = logging.getLogger("dap.worker")
 
-# Where the Tailscale command usually is when it is not on PATH (Windows installer).
+# Where the Tailscale command usually is when it is not on PATH.
 TAILSCALE_WINDOWS = Path("C:/Program Files/Tailscale/tailscale.exe")
+TAILSCALE_MACOS = Path("/Applications/Tailscale.app/Contents/MacOS/Tailscale")
 
 
 def load_env(env_file: str | None = None) -> None:
@@ -96,8 +97,8 @@ def get_settings() -> WorkerSettings:
 
 def _tailscale_ip() -> str | None:
     """This PC's Tailscale IPv4 address (`tailscale ip -4`), or None."""
-    command = shutil.which("tailscale") or (
-        str(TAILSCALE_WINDOWS) if TAILSCALE_WINDOWS.is_file() else None
+    command = shutil.which("tailscale") or next(
+        (str(path) for path in (TAILSCALE_WINDOWS, TAILSCALE_MACOS) if path.is_file()), None
     )
     if command is None:
         return None
