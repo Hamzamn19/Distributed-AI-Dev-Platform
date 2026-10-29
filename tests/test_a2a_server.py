@@ -177,15 +177,16 @@ def test_tasks_run_one_at_a_time_in_the_order_received(settings):
 
 def test_real_mode_reads_the_models_json_answer(monkeypatch):
     monkeypatch.setenv("LLM_MOCK", "0")
-    answer = ('```json\n{"summary": "tables", "files": '
-              '[{"path": "backend/database.py", "content": "import sqlite3"}]}\n```')
+    database = MOCK_FILES["backend/database.py"]
+    answer = "```json\n" + __import__("json").dumps({"summary": "tables", "files": [
+        {"path": "backend/database.py", "content": database}]}) + "\n```"
     monkeypatch.setattr(executor_module, "chat", lambda messages, json_mode: LLMResponse(
         text=answer, prompt_tokens=10, completion_tokens=20, duration_ms=30))
     from dap.shared.schemas import DapTaskPayload
 
     output = executor_module.execute(DapTaskPayload.model_validate(PAYLOAD))
     assert output.summary == "tables"
-    assert output.files[0].content == "import sqlite3"
+    assert output.files[0].content == database
     assert (output.prompt_tokens, output.completion_tokens, output.duration_ms) == (10, 20, 30)
 
 
@@ -207,7 +208,8 @@ def test_prompt_contains_requirement_task_targets_and_dependencies():
 
 def test_markdown_fences_around_a_file_are_removed(monkeypatch):
     monkeypatch.setenv("LLM_MOCK", "0")
-    fenced = "```python\nimport sqlite3\n```"
+    database = MOCK_FILES["backend/database.py"]
+    fenced = f"```python\n{database}```"
     answer = '{"summary": "s", "files": [{"path": "backend/database.py", "content": %s}]}' % (
         __import__("json").dumps(fenced))
     monkeypatch.setattr(executor_module, "chat", lambda messages, json_mode: LLMResponse(
@@ -215,7 +217,7 @@ def test_markdown_fences_around_a_file_are_removed(monkeypatch):
     from dap.shared.schemas import DapTaskPayload
 
     output = executor_module.execute(DapTaskPayload.model_validate(PAYLOAD))
-    assert output.files[0].content == "import sqlite3"
+    assert output.files[0].content == database.rstrip("\n")
 
 
 @pytest.mark.parametrize("content,reason", [

@@ -118,6 +118,8 @@ written in code. Added in Sprint 3:
 | `TASK_TIMEOUT_SEC` | master | `900` | A task not finished after this is marked `failed` |
 | `A2A_POLL_INTERVAL_SEC` | master | `3` | How often the master asks a worker for task status |
 | `LLM_TIMEOUT_SEC` | both | `120` | Seconds to wait for one model answer; use 600 on worker PCs |
+| `LLM_THINK` | both | `0` | `0`: requests ask reasoning models not to think first (`chat_template_kwargs.enable_thinking=false`, read by llama.cpp's llama-server); `1`: thinking allowed |
+| `LLM_MAX_TOKENS` | both | `8192` | Most tokens of one model answer when the caller gives no limit |
 | `MOCK_DELAY_SEC` | worker | `0` | With `LLM_MOCK=1`: seconds a mock task takes (demos show the agent busy) |
 | `VITE_API_BASE_URL` | frontend | empty | Empty means the relative `/api/v1`; set only for unusual setups |
 
@@ -381,7 +383,17 @@ writes the titles and descriptions); each task fills fixed files:
 | `backend` | `backend/main.py` | database |
 | `frontend` | `frontend/index.html`, `frontend/app.js` | backend |
 | `testing` | `tests/test_app.py` | backend, frontend |
-| (integrator) | `README.md`, `requirements.txt`, `.gitignore` | - |
+| (integrator) | `README.md`, `requirements.txt`, `.gitignore`, and the ready helpers `backend/db.py`, `frontend/lib.js`, `frontend/style.css` (no agent writes them) | - |
+
+The template and the prompts name no domain: the records, fields and rules come
+from the requirement and the task descriptions, so the instructor can choose any
+application. Before a worker returns its files it checks what the next agents rely
+on (`dap/worker/executor.py`, `verify()`): `init_db()` runs twice, every table has
+its `list_/get_/add_/update_/delete_` functions, `main.py` calls only defined
+database functions and its GET routes answer, `app.js` calls only existing routes
+and element ids, and the generated tests run. A problem goes back to the model
+(at most two corrections); some failing generated tests are accepted after the
+last one, with the count in the task summary.
 
 A worker may only write the files of its task (`target_files`). The files of a
 project go to `workspace/<project_id>/`, a git repository with one commit per

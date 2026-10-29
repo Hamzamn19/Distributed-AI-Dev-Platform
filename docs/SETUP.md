@@ -187,6 +187,22 @@ drops the rest. For long requirement documents set the environment variable
 `OLLAMA_CONTEXT_LENGTH` (for example `8192`) before starting Ollama, as far as
 the PC's memory allows.
 
+### llama.cpp (llama-server) instead of Ollama
+
+A worker may run its model with llama.cpp's `llama-server`, which speaks the same
+OpenAI-compatible API. Set `LLM_BASE_URL=http://localhost:8080/v1` (the server's
+port) and `LLM_MODEL` to the model's name. Reasoning models such as Gemma 4 or
+Qwen3 otherwise think for minutes before every answer; `LLM_THINK=0` (default)
+asks them not to, and this start option makes sure:
+
+```bash
+llama-server -m <model>.gguf --port 8080 --reasoning-budget 0
+```
+
+When the master uses this PC's model too (its `LLM_BASE_URL` points to
+`http://<this PC's Tailscale IP>:8080/v1`), add `--host 0.0.0.0` so the server
+answers on the tailnet, not only on `localhost`.
+
 ## Problems and fixes
 
 | Problem | Fix |
@@ -196,6 +212,7 @@ the PC's memory allows.
 | Worker gets 401 | `AGENT_TOKEN` differs between the two `.env` files |
 | Agents page: worker `idle` but "✗ not reachable" | The master cannot reach the worker's port 9000: firewall on the worker PC, or a wrong `WORKER_PUBLIC_URL`. Run `python scripts/check_connection.py` on the worker |
 | Worker says "A2A server could not start" | Another program (or a second worker) uses `WORKER_PORT`; choose another port and update `WORKER_PUBLIC_URL` |
+| A task takes many minutes and very many tokens for a short file | The model thinks before answering: keep `LLM_THINK=0` and start `llama-server` with `--reasoning-budget 0` |
 | A task fails with "timeout" | The model needs longer: raise `TASK_TIMEOUT_SEC` on the master and `LLM_TIMEOUT_SEC` on the worker |
 | http://localhost:8000 says "Frontend not built" | Run `cd frontend && npm install && npm run build`, then reload |
 | Worker gets `Env file not found` | The `--env-file` path is wrong; run from the repository root |

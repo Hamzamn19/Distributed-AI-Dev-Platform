@@ -108,3 +108,115 @@ def test_still_wrong_after_the_corrections_fails_the_task(real_mode):
     with pytest.raises(ValueError, match="(?s)still wrong after 2 corrections: .*NameError"):
         executor.execute(payload())
     assert len(calls) == 1 + executor.FIX_ROUNDS
+
+
+def test_only_the_last_answer_goes_back_to_the_model(real_mode):
+    calls = real_mode(answer({"backend/main.py": BROKEN_MAIN}),
+                      answer({"backend/main.py": BROKEN_MAIN}),
+                      answer({"backend/main.py": GOOD_MAIN}))
+    executor.execute(payload())
+    assert len(calls[1]) == len(calls[2]) == len(calls[0]) + 2
+
+
+# ---------------------------------------- the checks of what the next agents rely on
+
+GOOD_DATABASE = MOCK_FILES["backend/database.py"]
+
+
+def database_task():
+    return payload("database", ["backend/database.py"], [])
+
+
+def test_database_whose_init_db_fails_on_a_restart_is_sent_back():
+    # The mistake of round 2: the sample data is inserted again at every start.
+    database = GOOD_DATABASE.replace(
+        "name TEXT NOT NULL)\"\n        )",
+        "name TEXT NOT NULL UNIQUE)\"\n        )\n"
+        "        connection.execute(\"INSERT INTO items (name) VALUES ('first')\")")
+    problem = executor.verify(database_task(), output(backend__database_py=database))
+    assert "init_db() fails when it runs a second time" in problem
+    assert "UNIQUE constraint failed" in problem
+
+
+def test_database_without_the_functions_of_a_table_is_sent_back():
+    # The other mistake of round 2: only the tables, none of the functions.
+    database = GOOD_DATABASE.split("\n\ndef list_items")[0] + "\n"
+    problem = executor.verify(database_task(), output(backend__database_py=database))
+    assert ("does not define these functions: list_items, get_item, add_item, update_item, "
+            "delete_item") in problem
+
+
+def test_the_mock_database_passes_every_check():
+    assert executor.verify(database_task(), output(backend__database_py=GOOD_DATABASE)) is None
+
+
+def test_backend_that_calls_a_missing_database_function_is_sent_back():
+    main = GOOD_MAIN.replace("database.add_item(item.name)", "database.add_task(item.name)")
+    problem = executor.verify(payload(), output(backend__main_py=main))
+    assert "uses database.add_task, which backend/database.py does not define" in problem
+    assert "list_items" in problem
+
+
+def test_backend_whose_get_route_fails_is_sent_back():
+    main = GOOD_MAIN.replace("return database.list_items()", "return 1 / 0")
+    problem = executor.verify(payload(), output(backend__main_py=main))
+    assert "GET /api/items fails: ZeroDivisionError" in problem
+
+
+def frontend_task():
+    return payload("frontend", ["frontend/index.html", "frontend/app.js"],
+                   ["backend/database.py", "backend/main.py"])
+
+
+def test_the_mock_frontend_passes_its_checks():
+    files = output(frontend__index_html=MOCK_FILES["frontend/index.html"],
+                   frontend__app_js=MOCK_FILES["frontend/app.js"])
+    assert executor.verify(frontend_task(), files) is None
+
+
+def test_frontend_routes_and_ids_must_exist():
+    app_js = MOCK_FILES["frontend/app.js"].replace('fetch("/api/items")', 'fetch("/api/tasks")')
+    app_js += 'document.getElementById("summary");\n'
+    problem = executor.check_frontend(app_js, MOCK_FILES["frontend/index.html"], GOOD_MAIN)
+    assert "frontend/app.js calls /api/tasks, which backend/main.py does not have" in problem
+    assert "element ids that frontend/index.html does not have: summary" in problem
+
+
+def test_frontend_paths_with_parameters_match_the_routes():
+    main = '@app.get("/api/tasks/{task_id}")\n@app.post("/api/tasks/{id}/complete")\n'
+    app_js = ("api(`/api/tasks/${row.id}`); api(`/api/tasks/${id}/complete`, {});"
+              ' api("/api/tasks/" + id); api(`/api/tasks/${id}?full=1`);')
+    assert executor.check_frontend(app_js, "", main) is None
+
+
+FAILING_TEST = '''
+
+def test_a_route_that_does_not_exist():
+    assert client.get("/api/nothing").status_code == 200
+'''
+
+
+def make_testing_payload():
+    return payload("testing", ["tests/test_app.py"],
+                   ["backend/database.py", "backend/main.py"])
+
+
+def test_the_generated_tests_run_and_failures_are_sent_back():
+    tests = MOCK_FILES["tests/test_app.py"] + FAILING_TEST
+    problem = executor.verify(make_testing_payload(), output(tests__test_app_py=tests))
+    assert problem.startswith(f"{executor.TESTS_FAIL}: 1 of 2 pass.")
+    assert "test_a_route_that_does_not_exist" in problem
+
+
+def test_some_failing_tests_are_accepted_after_the_last_correction(real_mode):
+    tests = MOCK_FILES["tests/test_app.py"] + FAILING_TEST
+    calls = real_mode(*[answer({"tests/test_app.py": tests})] * 3)
+    result = executor.execute(make_testing_payload())
+    assert len(calls) == 3
+    assert result.summary == "done (corrected 2x) (tests: 1 of 2 pass.)"
+
+
+def test_tests_that_cannot_run_are_a_real_problem():
+    tests = MOCK_FILES["tests/test_app.py"].replace("def test_add_and_list_items", "def check_x")
+    problem = executor.verify(make_testing_payload(), output(tests__test_app_py=tests))
+    assert problem == "tests/test_app.py has no test functions (def test_...)"

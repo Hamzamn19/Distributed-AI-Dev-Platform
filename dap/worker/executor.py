@@ -8,6 +8,11 @@ fences around a file's content are removed) and check the files: exactly the
 task's target_files, none empty, Python files without syntax errors, and every
 Python file really loads (verify(): the template, the dependency files and the
 new files are written to a temporary folder and each new .py file is run once).
+verify() then checks what the next agents rely on: init_db() runs twice and
+every table has its list_/get_/add_/update_/delete_ functions; main.py calls only
+defined database functions and its GET routes answer; app.js calls only existing
+routes and element ids; the generated tests run (some failing tests are accepted
+after the last correction, with the count in the summary).
 
 Self-correction: when a check fails, the model gets the problem (for example
 "NameError: name 'database' is not defined") and answers again, at most
@@ -19,6 +24,7 @@ MOCK_DELAY_SEC (default 0) makes a mock task take that long, so a demo can
 show the agent as busy.
 """
 
+import ast
 import json
 import logging
 import os
@@ -109,6 +115,10 @@ def check_output(payload: DapTaskPayload, output: DapTaskOutput) -> None:
 
 FIX_ROUNDS = 2          # extra answers the model may give after a failed check
 VERIFY_TIMEOUT_SEC = 60
+TESTS_TIMEOUT_SEC = 120
+# First words of the problem when only some generated tests fail. After the last
+# correction such a task is still accepted, with the count in its summary.
+TESTS_FAIL = "Some generated tests fail"
 
 # Runs one generated file once, from the application folder, as `python <file>` would.
 _RUN_FILE = (
@@ -116,15 +126,180 @@ _RUN_FILE = (
     "runpy.run_path(sys.argv[1], run_name='dap_check')"
 )
 
+# database.py: init_db() twice (the app restarts) and the five functions of every table.
+_CHECK_DATABASE = '''
+import sqlite3, sys
+sys.path.insert(0, ".")
+from backend import database, db
+database.init_db()
+try:
+    database.init_db()
+except Exception as exc:
+    sys.exit(f"init_db() fails when it runs a second time (every restart of the app): "
+             f"{type(exc).__name__}: {exc}. Use CREATE TABLE IF NOT EXISTS and add the "
+             "sample data only when the table is empty.")
+
+
+def singular(name):
+    if name.endswith("ies"):
+        return name[:-3] + "y"
+    if name.endswith(("sses", "xes", "ches", "shes")):
+        return name[:-2]
+    return name[:-1] if name.endswith("s") else name
+
+
+with sqlite3.connect(db.DB_PATH) as connection:
+    tables = [row[0] for row in connection.execute(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%'")]
+if not tables:
+    sys.exit("init_db() creates no table")
+missing = []
+for table in tables:
+    one = singular(table)
+    for name in (f"list_{table}", f"get_{one}", f"add_{one}", f"update_{one}", f"delete_{one}"):
+        if not callable(getattr(database, name, None)):
+            missing.append(name)
+if missing:
+    sys.exit("backend/database.py does not define these functions: " + ", ".join(missing)
+             + ". Write list_/get_/add_/update_/delete_ for every table.")
+'''
+
+# main.py: every GET route without a path parameter answers without a server error.
+_CHECK_BACKEND = '''
+import sys
+sys.path.insert(0, ".")
+from fastapi.testclient import TestClient
+from backend.main import app
+client = TestClient(app)
+paths = [route.path for route in app.routes
+         if "GET" in (getattr(route, "methods", None) or ()) and route.path.startswith("/api")
+         and "{" not in route.path]
+if not paths:
+    sys.exit("backend/main.py has no GET route under /api")
+for path in paths:
+    try:
+        response = client.get(path)
+    except Exception as exc:
+        sys.exit(f"GET {path} fails: {type(exc).__name__}: {exc}")
+    if response.status_code >= 500:
+        sys.exit(f"GET {path} answers {response.status_code}: {response.text[:200]}")
+'''
+
+
+def _run(root: Path, args: list[str], what: str, timeout: int = VERIFY_TIMEOUT_SEC) -> str | None:
+    """Run Python in the application folder; the last lines of the error, or None."""
+    try:
+        result = subprocess.run([sys.executable, *args], cwd=root, capture_output=True,
+                                text=True, timeout=timeout)
+    except subprocess.TimeoutExpired:
+        return f"{what} did not finish within {timeout} s"
+    if result.returncode == 0:
+        return None
+    lines = [line for line in result.stderr.strip().splitlines() if line.strip()]
+    return f"{what}:\n" + "\n".join(lines[-4:])
+
+
+def _defined_names(source: str) -> set[str]:
+    """Top-level functions, classes, variables and imports of a Python file."""
+    names: set[str] = set()
+    for node in ast.parse(source).body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            names.add(node.name)
+        elif isinstance(node, ast.Assign):
+            names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+        elif isinstance(node, (ast.Import, ast.ImportFrom)):
+            names.update((a.asname or a.name).split(".")[0] for a in node.names)
+    return names
+
+
+HELPERS = {"connect", "execute", "fetch_all", "fetch_one"}  # backend/db.py
+
+
+def check_database_calls(main_source: str, database_source: str) -> str | None:
+    """Every database.<name> that main.py uses must be defined in database.py."""
+    used = sorted({node.attr for node in ast.walk(ast.parse(main_source))
+                   if isinstance(node, ast.Attribute) and isinstance(node.value, ast.Name)
+                   and node.value.id == "database"})
+    defined = _defined_names(database_source)
+    missing = [name for name in used if name not in defined]
+    if not missing:
+        return None
+    functions = sorted(n for n in defined
+                       if not n.startswith("_") and n[0].islower() and n not in HELPERS)
+    return ("backend/main.py uses database." + ", database.".join(missing)
+            + ", which backend/database.py does not define. Use only: " + ", ".join(functions))
+
+
+_ROUTE = re.compile(r"@app\.(?:get|post|put|patch|delete)\(\s*[\"']([^\"']+)[\"']")
+_API_PATH = re.compile(r"[\"'`](/api/[^\"'`\s]*)")
+_ELEMENT = re.compile(r"getElementById\(\s*[\"'`]([^\"'`$]+)[\"'`]\s*\)")
+_ID_ATTRIBUTE = re.compile(r"id\s*=\s*\\?[\"']([^\"'\\$]+)")
+_ID_PROPERTY = re.compile(r"\.id\s*=\s*[\"']([^\"']+)")
+
+
+def _route_pattern(path: str) -> re.Pattern:
+    """/api/tasks/{id} -> a pattern that matches /api/tasks/7 (and a trailing slash)."""
+    parts = re.split(r"\{[^}]*\}", path)
+    return re.compile("[^/]+".join(re.escape(part) for part in parts) + "/?")
+
+
+def check_frontend(app_js: str, index_html: str, main_source: str) -> str | None:
+    """Paths of app.js must be routes of main.py; looked-up ids must exist."""
+    route_paths = _ROUTE.findall(main_source)
+    routes = [_route_pattern(path) for path in route_paths]
+    unknown = []
+    for raw in _API_PATH.findall(app_js):
+        path = re.sub(r"\$\{[^}]*\}", "1", raw).split("?")[0]
+        candidates = [path, path + "1"] if path.endswith("/") else [path]
+        if not any(r.fullmatch(c) for r in routes for c in candidates):
+            unknown.append(raw)
+    problems = []
+    if unknown:
+        problems.append("frontend/app.js calls " + ", ".join(sorted(set(unknown)))
+                        + ", which backend/main.py does not have. Its routes: "
+                        + ", ".join(route_paths))
+    defined = set(_ID_ATTRIBUTE.findall(index_html + app_js)) | set(_ID_PROPERTY.findall(app_js))
+    missing = sorted({i for i in _ELEMENT.findall(app_js) if i not in defined})
+    if missing:
+        problems.append("frontend/app.js looks up element ids that frontend/index.html does "
+                        "not have: " + ", ".join(missing))
+    return "\n".join(problems) or None
+
+
+def run_generated_tests(root: Path) -> str | None:
+    """Run the generated tests; None when they all pass."""
+    try:
+        result = subprocess.run(
+            [sys.executable, "-m", "pytest", "-q", "-rf", "--tb=no", "-p", "no:cacheprovider",
+             "tests"], cwd=root, capture_output=True, text=True, timeout=TESTS_TIMEOUT_SEC)
+    except subprocess.TimeoutExpired:
+        return f"the generated tests did not finish within {TESTS_TIMEOUT_SEC} s"
+    if result.returncode == 0:
+        return None
+    lines = [line for line in result.stdout.strip().splitlines() if line.strip()]
+    failed = re.search(r"(\d+) failed", result.stdout)
+    if result.returncode == 1 and failed:
+        passed = re.search(r"(\d+) passed", result.stdout)
+        passed_count = int(passed.group(1)) if passed else 0
+        total = passed_count + int(failed.group(1))
+        failures = [line for line in lines if line.startswith("FAILED")][:12]
+        return (f"{TESTS_FAIL}: {passed_count} of {total} pass.\n" + "\n".join(failures)
+                + "\nFix the tests that use wrong routes, fields, status codes or data; "
+                  "backend/main.py and backend/database.py stay as they are.")
+    if result.returncode == 5:
+        return "tests/test_app.py has no test functions (def test_...)"
+    return "the generated tests cannot run:\n" + "\n".join(lines[-6:])
+
 
 def verify(payload: DapTaskPayload, output: DapTaskOutput) -> str | None:
-    """Load every new Python file next to the template and the dependency files.
+    """Put the new files next to the template and the dependency files and check them.
 
-    Returns the problem as a short text (the last lines of the error), or None.
+    Every new Python file must load. Then, by file: database.py survives a second
+    init_db() and has the five functions of every table; main.py calls only defined
+    database functions and its GET routes answer; app.js calls existing routes and
+    element ids; the generated tests run and pass. Returns the problem, or None.
     """
-    python_files = [f.path for f in output.files if f.path.endswith(".py")]
-    if not python_files:
-        return None
+    written = {f.path for f in output.files}
     with tempfile.TemporaryDirectory(prefix="dap-check-") as folder:
         root = Path(folder)
         if prompts.TEMPLATE_DIR.is_dir():
@@ -133,16 +308,31 @@ def verify(payload: DapTaskPayload, output: DapTaskOutput) -> str | None:
             target = root / file.path
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(file.content, encoding="utf-8")
-        for path in python_files:
-            try:
-                result = subprocess.run(
-                    [sys.executable, "-c", _RUN_FILE, path], cwd=root,
-                    capture_output=True, text=True, timeout=VERIFY_TIMEOUT_SEC)
-            except subprocess.TimeoutExpired:
-                return f"{path} did not finish loading within {VERIFY_TIMEOUT_SEC} s"
-            if result.returncode != 0:
-                lines = [line for line in result.stderr.strip().splitlines() if line.strip()]
-                return f"{path} fails when it is loaded:\n" + "\n".join(lines[-4:])
+
+        def text(path: str) -> str:
+            file = root / path
+            return file.read_text(encoding="utf-8") if file.is_file() else ""
+
+        for path in sorted(p for p in written if p.endswith(".py")):
+            problem = _run(root, ["-c", _RUN_FILE, path], f"{path} fails when it is loaded")
+            if problem:
+                return problem
+        if "backend/database.py" in written:
+            problem = _run(root, ["-c", _CHECK_DATABASE], "backend/database.py check")
+            if problem:
+                return problem
+        if "backend/main.py" in written:
+            problem = (check_database_calls(text("backend/main.py"), text("backend/database.py"))
+                       or _run(root, ["-c", _CHECK_BACKEND], "the GET routes of backend/main.py"))
+            if problem:
+                return problem
+        if "frontend/app.js" in written:
+            problem = check_frontend(text("frontend/app.js"), text("frontend/index.html"),
+                                     text("backend/main.py"))
+            if problem:
+                return problem
+        if "tests/test_app.py" in written:
+            return run_generated_tests(root)
     return None
 
 
@@ -162,7 +352,8 @@ def execute(payload: DapTaskPayload) -> DapTaskOutput:
                  for path in payload.target_files]
         return DapTaskOutput(summary=f"Mock output for: {payload.title}", files=files)
 
-    messages = prompts.build_messages(payload)
+    first = prompts.build_messages(payload)
+    messages = first
     prompt_tokens = completion_tokens = duration_ms = 0
     problem = ""
     for round_number in range(1 + FIX_ROUNDS):
@@ -170,20 +361,28 @@ def execute(payload: DapTaskPayload) -> DapTaskOutput:
         prompt_tokens += answer.prompt_tokens
         completion_tokens += answer.completion_tokens
         duration_ms += answer.duration_ms
+        logger.info("Task %s, answer %d: %d prompt + %d completion tokens, %.0f s",
+                    payload.title, round_number + 1, answer.prompt_tokens,
+                    answer.completion_tokens, answer.duration_ms / 1000)
+        output = None
         try:
             output = _read_answer(answer.text, payload)
             check_output(payload, output)
             problem = verify(payload, output) or ""
         except (ValueError, json.JSONDecodeError) as exc:
             problem = str(exc)
-        if not problem:
+        last_round = round_number == FIX_ROUNDS
+        if not problem or (last_round and problem.startswith(TESTS_FAIL)):
             output.prompt_tokens, output.completion_tokens = prompt_tokens, completion_tokens
             output.duration_ms = duration_ms
             if round_number:
                 output.summary += f" (corrected {round_number}x)"
+            if problem:
+                output.summary += f" (tests: {problem.splitlines()[0][len(TESTS_FAIL) + 2:]})"
             return output
         logger.warning("Task %s, answer %d: %s", payload.title, round_number + 1, problem)
-        messages = [*messages, {"role": "assistant", "content": answer.text}, {
+        # Only the last answer goes back, so the conversation does not grow every round.
+        messages = [*first, {"role": "assistant", "content": answer.text}, {
             "role": "user",
             "content": f"Your files have this problem:\n{problem}\n\nFix it. Answer again "
                        "with the complete corrected files, in the same JSON shape, with the "
@@ -282,16 +481,7 @@ class Executor:
 MOCK_FILES: dict[str, str] = {
     "backend/database.py": '''"""SQLite storage (mock output): one table of items."""
 
-import sqlite3
-from pathlib import Path
-
-DB_PATH = Path(__file__).resolve().parent.parent / "app.db"
-
-
-def connect() -> sqlite3.Connection:
-    connection = sqlite3.connect(DB_PATH)
-    connection.row_factory = sqlite3.Row
-    return connection
+from backend.db import connect, execute, fetch_all, fetch_one
 
 
 def init_db() -> None:
@@ -301,15 +491,26 @@ def init_db() -> None:
         )
 
 
-def list_items() -> list[dict]:
-    with connect() as connection:
-        return [dict(row) for row in connection.execute("SELECT id, name FROM items ORDER BY id")]
+def list_items(search: str | None = None) -> list[dict]:
+    return fetch_all("SELECT id, name FROM items WHERE name LIKE ? ORDER BY id",
+                     (f"%{search or ''}%",))
+
+
+def get_item(item_id: int) -> dict | None:
+    return fetch_one("SELECT id, name FROM items WHERE id = ?", (item_id,))
 
 
 def add_item(name: str) -> dict:
-    with connect() as connection:
-        cursor = connection.execute("INSERT INTO items (name) VALUES (?)", (name,))
-        return {"id": cursor.lastrowid, "name": name}
+    return get_item(execute("INSERT INTO items (name) VALUES (?)", (name,)))
+
+
+def update_item(item_id: int, name: str) -> dict | None:
+    execute("UPDATE items SET name = ? WHERE id = ?", (name, item_id))
+    return get_item(item_id)
+
+
+def delete_item(item_id: int) -> bool:
+    return execute("DELETE FROM items WHERE id = ?", (item_id,)) > 0
 ''',
     "backend/main.py": '''"""FastAPI routes (mock output). Run from the app folder: uvicorn backend.main:app"""
 
@@ -377,9 +578,15 @@ load();
 import sys
 from pathlib import Path
 
+import tempfile
+
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from fastapi.testclient import TestClient  # noqa: E402
+
+from backend import db  # noqa: E402
+
+db.DB_PATH = Path(tempfile.mkdtemp()) / "test.db"
 
 from backend.main import app  # noqa: E402
 

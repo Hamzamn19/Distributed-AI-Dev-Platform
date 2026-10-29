@@ -9,6 +9,7 @@ requirement document. `git log` shows which agent wrote which part.
 | `backend/main.py` | backend task: FastAPI routes under `/api` |
 | `frontend/index.html`, `frontend/app.js` | frontend task: the page |
 | `tests/test_app.py` | testing task: pytest tests of the API |
+| `backend/db.py`, `frontend/lib.js`, `frontend/style.css` | ready parts of the template |
 
 ## Run
 
@@ -21,5 +22,5 @@ pip install -r requirements.txt
 uvicorn backend.main:app        # then open http://localhost:8000
 ```
 
-Tests: `python -m pytest`. The data is stored in `app.db` in this folder; delete it
-to start empty.
+Tests: `python -m pytest` (they use a database file of their own). The data is
+stored in `app.db` in this folder, with some sample records; delete it to start again.

@@ -3,25 +3,41 @@
   The page of the generated application: plain HTML, no framework, no build step.
 
   Filled by: the FRONTEND task (together with frontend/app.js).
-  Served by: backend/main.py at http://localhost:8000/.
+  Served by: backend/main.py at /. Styled by frontend/style.css and helped by frontend/lib.js (both ready).
   Relies on: frontend/app.js, loaded at the end of <body>.
 
-  Rules every agent follows:
-  - One page. Give every list and form an id; app.js finds them with getElementById.
-  - Show the records of the requirement in lists or tables, and a form for each action.
-  - Keep an element with id="message" for errors and confirmations.
-  - Interface text in English.
+  Rules every agent follows (<things> is a record name of the requirement, in plural):
+  - Keep the <head>, the header with id="nav" (one <a href="#section-..."> per section),
+    <p id="message"> and both script lines.
+  - First section: id="dashboard", class="stats" with one card per record type
+    (<div class="card stat"><span id="stat-<things>">0</span><small><Things></small></div>).
+  - Then one <section class="panel" id="section-<things>"> per record type, each with:
+      <h2>, a search box <input id="search-<things>" type="search" placeholder="Search...">,
+      a form id="form-<things>" (class="form-grid") whose inputs have name= the API field
+      names, the right type (text, number, date, email, select, textarea) and required
+      where needed, a hidden <input name="id"> for editing, a submit button and a
+      <button type="button" class="secondary" data-reset>Cancel</button>,
+      and an empty <div id="list-<things>"></div> for the table.
+  - Use the ready CSS classes: card, panel, stats, stat, form-grid, badge, secondary, danger.
+  - Interface text in English; the page title and <h1> name the application.
 -->
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>Generated application</title>
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <h1>Generated application</h1>
-  <p id="message"></p>
-  <!-- lists, tables and forms of the requirement -->
+  <header class="topbar">
+    <h1>Generated application</h1>
+    <nav id="nav"></nav>
+  </header>
+  <main>
+    <p id="message" role="status"></p>
+    <!-- the dashboard section, then one section per record type -->
+  </main>
+  <script src="lib.js"></script>
   <script src="app.js"></script>
 </body>
 </html>

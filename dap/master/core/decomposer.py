@@ -54,8 +54,15 @@ Rules:
 - The four tasks build one small web application from a fixed template:
   database = SQLite tables and functions, backend = FastAPI routes under /api,
   frontend = one HTML page with JavaScript, testing = pytest tests of the API.
-- Write titles and descriptions for THIS requirement: name its records, fields,
-  screens and rules, so each developer knows exactly what to build.
+- Write titles and descriptions for THIS requirement, whatever its domain, so each
+  developer builds the same application with the same names:
+  database: every table (plural snake_case) with its columns and links, the
+    business rules (limits, states, checks) and the actions (for example
+    "complete a task", "borrow an item");
+  backend: the /api/<table> routes of every table and one route per action;
+  frontend: one section per table with its form fields and action buttons;
+  testing: the routes, rules and actions to test.
+  Use the same table and field names in all four descriptions.
 - "key" is a short unique name such as "T1".
 - "depends_on" lists the keys of tasks that must finish first
   (database first, then backend, then frontend, testing last).
