@@ -221,7 +221,8 @@ def _send(run: _Run, task: Task) -> None:
     repositories.set_task_status(task.id, TaskStatus.IN_PROGRESS, remote_task_id=remote.id)
     run.status[task.id] = TaskStatus.IN_PROGRESS
     run.sent[task.id] = _Sent(agent=agent, remote_id=remote.id, sent_at=time.monotonic())
-    logger.info("Sent %s to %s (remote task %s)", task.title, agent.agent_id, remote.id)
+    logger.info("Sent %s to %s at %s (remote task %s)", task.title, agent.agent_id,
+                agent.a2a_url, remote.id)
 
 
 # ------------------------------------------------------------------- following
