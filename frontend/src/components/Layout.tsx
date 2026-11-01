@@ -1,5 +1,4 @@
 import { NavLink, Outlet } from "react-router-dom";
-import { USING_MOCK } from "../api/client";
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
   `rounded-lg px-3 py-2 text-sm font-medium ${
@@ -15,21 +14,14 @@ export default function Layout() {
             <p className="text-sm font-semibold text-violet-700">DISTRIBUTED AI</p>
             <h1 className="text-xl font-bold">Development Platform</h1>
           </div>
-          <div className="flex flex-wrap items-center gap-3">
-            {USING_MOCK && (
-              <span className="rounded-full bg-amber-100 px-3 py-1 text-sm font-medium text-amber-700">
-                Sample data
-              </span>
-            )}
-            <nav className="flex gap-2">
-              <NavLink to="/" end className={linkClass}>
-                Projects
-              </NavLink>
-              <NavLink to="/agents" className={linkClass}>
-                Agents
-              </NavLink>
-            </nav>
-          </div>
+          <nav className="flex gap-2">
+            <NavLink to="/" end className={linkClass}>
+              Projects
+            </NavLink>
+            <NavLink to="/agents" className={linkClass}>
+              Agents
+            </NavLink>
+          </nav>
         </div>
       </header>
       <main className="mx-auto max-w-6xl space-y-8 px-4 py-8 sm:px-6 sm:py-10">
