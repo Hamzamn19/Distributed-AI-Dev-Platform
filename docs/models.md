@@ -187,3 +187,24 @@ Server settings matter for the coding score: the same model and questions on a
 plain Ollama server (context 2048, no flash attention, no speculative
 decoding) scored `coding=50` because `merge_intervals` failed 0/6. Measure a
 model with the server configuration that will also run it in the demo.
+
+
+### Extra run: gemma4:26b (Baran-PC, 1 November)
+
+Measured on the master PC (MacBook Pro, Apple M5, Ollama). Baran has no row in
+`docs/agents.json`, so the run is recorded here only (no `--write`).
+
+| Question | Outcome | Duration | Tokens prompt/completion |
+| --- | --- | --- | --- |
+| coding `is_palindrome` | 6/6 unit tests | 11.5 s | 87 / 423 |
+| coding `merge_intervals` | 6/6 unit tests | 27.3 s | 125 / 1 254 |
+| reasoning `bat_and_ball` | correct (`5`) | 8.1 s | 61 / 351 |
+| reasoning `race_order` | correct (`Dana`) | 7.3 s | 61 / 325 |
+| context needle | found (`4817`) | 10.0 s | 2 431 / 126 |
+| **totals** | 12/12 tests, 2/2 answers, needle found | **1.1 min** | **2 765 / 2 479 (~38.7 tok/s)** |
+
+RESULT gemma4:26b coding=100 reasoning=100 context=100 (1.1 min)
+TOKENS prompt=2765 completion=2479 total=5244 ~38.7 tok/s
+AGENT_CAP_CODING=100
+AGENT_CAP_REASONING=100
+AGENT_CAP_CONTEXT=100
