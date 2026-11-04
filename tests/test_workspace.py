@@ -6,7 +6,7 @@ import sys
 
 import pytest
 
-from dap.master.db.workspace import save_generated_files
+from dap.master.db.workspace import save_generated_files, write_project_files
 from dap.shared.schemas import GeneratedFile
 
 
@@ -99,3 +99,44 @@ def test_existing_file_cannot_be_used_as_directory(tmp_path):
             workspace_root=tmp_path,
         )
     assert (directory / "db").read_text("utf-8") == "existing"
+
+
+# ---- Sprint 3: files go straight into <root>/<project_id>/ and overwrite
+
+def test_project_files_overwrite_template_and_keep_other_files(tmp_path):
+    project = tmp_path / "project-1"
+    (project / "backend").mkdir(parents=True)
+    (project / "backend" / "main.py").write_text("# template\n", encoding="utf-8")
+    (project / "README.md").write_text("ready file\n", encoding="utf-8")
+    paths = write_project_files(
+        "project-1", [GeneratedFile(path="backend/main.py", content="app = 1\n")],
+        workspace_root=tmp_path,
+    )
+    assert paths == [project / "backend" / "main.py"]
+    assert paths[0].read_text("utf-8") == "app = 1\n"
+    assert (project / "README.md").read_text("utf-8") == "ready file\n"
+    write_project_files(                                   # a retry overwrites again
+        "project-1", [GeneratedFile(path="backend/main.py", content="app = 2\n")],
+        workspace_root=tmp_path,
+    )
+    assert paths[0].read_text("utf-8") == "app = 2\n"
+
+
+def test_project_files_reject_bad_input_before_any_write(tmp_path):
+    root = tmp_path / "workspace"
+    for files in (
+        [GeneratedFile(path="ok.txt", content="a"), GeneratedFile(path="../escape", content="b")],
+        [GeneratedFile(path="a.txt", content="a"), GeneratedFile(path="A.TXT", content="b")],
+    ):
+        with pytest.raises(ValueError):
+            write_project_files("project-1", files, workspace_root=root)
+    with pytest.raises(ValueError):
+        write_project_files("../x", [], workspace_root=root)
+    assert not root.exists()
+
+
+def test_project_file_cannot_replace_a_folder(tmp_path):
+    (tmp_path / "project-1" / "backend").mkdir(parents=True)
+    with pytest.raises(FileExistsError):
+        write_project_files("project-1", [GeneratedFile(path="backend", content="x")],
+                            workspace_root=tmp_path)

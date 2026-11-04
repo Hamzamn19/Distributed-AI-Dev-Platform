@@ -33,8 +33,10 @@ ATTEMPTS = 2  # first try + one retry
 
 MOCK_TEXT = "mock response"
 
-# Same shape the decomposer asks the model for (member guide, agreement 2).
+# Same shape the decomposer asks the model for (contract section 12.3): the
+# project's records plus the tasks.
 MOCK_JSON = {
+    "records": ["customers", "orders"],
     "tasks": [
         {
             "key": "T1",

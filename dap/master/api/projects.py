@@ -5,6 +5,7 @@ Owner: Baran - cards S1-05 and S1-06.
 Endpoints to add (paths are relative to /api/v1, see docs/PROJECT_CONTRACT.md):
 
     POST /projects                 body ProjectCreate -> 201 Project      (S1-05)
+        Also copies templates/webapp/ to workspace/<project_id>/ (Sprint 3).
         A missing or too short requirement_text gives 422 automatically.
     GET  /projects                                    -> 200 list[Project] (S1-05)
     GET  /projects/{id}                               -> 200 Project, 404  (S1-05)
@@ -28,7 +29,9 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
+from dap.master.api import tasks as tasks_api
 from dap.master.core import decomposer, selector
+from dap.master.core.project_template import copy_template
 from dap.master.db import repositories
 from dap.shared.enums import ProjectStatus, TaskStatus
 from dap.shared.schemas import Project, ProjectCreate, Task
@@ -47,7 +50,17 @@ def _get_project_or_404(project_id: str) -> Project:
 
 @router.post("", response_model=Project, status_code=201)
 def create_project(body: ProjectCreate) -> Project:
-    return repositories.create_project(body)
+    project = repositories.create_project(body)
+    # Contract 12.1: every project starts from a copy of templates/webapp/.
+    try:
+        copy_template(project.id, workspace_root=tasks_api.workspace_root)
+    except (OSError, ValueError) as exc:
+        logger.error("Template copy for project %s failed: %s", project.id, exc)
+        repositories.set_project_status(project.id, ProjectStatus.FAILED)
+        raise HTTPException(
+            status_code=500, detail=f"Project created but the template copy failed: {exc}"
+        ) from exc
+    return project
 
 
 @router.get("", response_model=list[Project])
