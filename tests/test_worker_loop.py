@@ -207,15 +207,15 @@ def test_files_go_under_the_task_type_folder():
 
 def test_a_later_task_overwrites_the_same_file_in_the_project_folder(monkeypatch, _isolated):
     answers = [
-        json.dumps({"summary": "one", "files": [{"path": "notes.md", "content": "first"}]}),
-        json.dumps({"summary": "two", "files": [{"path": "notes.md", "content": "second"}]}),
+        json.dumps({"summary": "one", "files": [{"path": "main.py", "content": "first"}]}),
+        json.dumps({"summary": "two", "files": [{"path": "main.py", "content": "second"}]}),
     ]
     monkeypatch.setattr(executor, "chat", _fake_chat(answers))
     project = repositories.create_project(ProjectCreate(
         name="Clash", requirement_text="Two backend tasks that write the same file.",
     ))
     repositories.create_tasks(project.id, [
-        TaskCreate(id=f"t-{n}", title=f"Task {n}", description="write notes",
+        TaskCreate(id=f"t-{n}", title=f"Task {n}", description="write backend",
                    type=TaskType.BACKEND, depends_on=[])
         for n in (1, 2)
     ])
@@ -228,4 +228,4 @@ def test_a_later_task_overwrites_the_same_file_in_the_project_folder(monkeypatch
     assert first.status == TaskStatus.COMPLETED
     # Contract 12.1: files are written over each other, there is no clash any more.
     assert second.status == TaskStatus.COMPLETED
-    assert (_isolated / project.id / "backend" / "notes.md").read_text() == "second"
+    assert (_isolated / project.id / "backend" / "main.py").read_text() == "second"

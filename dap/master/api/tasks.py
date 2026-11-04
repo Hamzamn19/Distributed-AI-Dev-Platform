@@ -43,10 +43,18 @@ from dap.master.api.agents import require_agent_token
 from dap.master.db import repositories
 from dap.master.db import results as results_db
 from dap.master.db.results import store_task_result
-from dap.shared.enums import TaskStatus
+from dap.shared.enums import TaskStatus, TaskType
 from dap.shared.schemas import GeneratedFile, Task, TaskResult
 
 router = APIRouter(tags=["worker"])
+
+# Contract 12.2: only the stored task type determines its output file.
+_TASK_OUTPUT_PATH = {
+    TaskType.DATABASE: "backend/database.py",
+    TaskType.BACKEND: "backend/main.py",
+    TaskType.FRONTEND: "frontend/index.html",
+    TaskType.TESTING: "tests/test_app.py",
+}
 
 MAX_ATTEMPTS = 3
 workspace_root = Path("workspace")
@@ -139,6 +147,15 @@ def post_result(task_id: str, body: TaskResult) -> Task:
     if body.duration_ms < 0 or body.tokens_used < 0:
         raise HTTPException(
             status_code=422, detail="Result duration and token count must be nonnegative"
+        )
+
+    expected = _TASK_OUTPUT_PATH.get(task.type)
+    paths = [file.path for file in body.files]
+    if (body.success and (expected is None or paths != [expected])) or (not body.success and paths):
+        raise HTTPException(
+            status_code=422,
+            detail=(f"Successful result must contain exactly {expected!r}"
+                    if body.success else "Failed result must not contain files"),
         )
 
     try:
