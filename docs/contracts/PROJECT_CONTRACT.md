@@ -10,6 +10,10 @@ travels with the code. Okan keeps the two in sync.
 Version 1.1 (18 October 2026): adds the Sprint 2 selection formula, the task
 taxonomy, capability measurement and the requirement length limit.
 
+Version 1.2 (4 November 2026): fixes the Sprint 3 template rules (folder
+layout, one file per task, the sketch shape) and makes Eray the owner of
+`templates/`.
+
 ## 1. How to use this file with an AI assistant
 
 An AI tool that opens the repository (Antigravity, Claude Code, Cursor and
@@ -67,13 +71,16 @@ Three rules prevent most integration problems:
 | --- | --- |
 | `dap/master/api/`, `dap/master/core/`, `dap/master/cli.py`, `dap/shared/enums.py`, `dap/shared/schemas.py` | Baran |
 | `dap/master/db/` | Can |
-| `dap/worker/`, `dap/shared/llm_client.py` | Eray |
+| `dap/worker/`, `dap/shared/llm_client.py`, `templates/` | Eray |
 | `frontend/` | Fatma |
 | `scripts/`, `tests/`, `.github/`, root files | Abdurrahman |
 | `docs/` | Okan |
 | `docs/sprints/` | Hamza |
 
 A change in `dap/shared/` needs approval from both Baran and Okan.
+
+`templates/` belongs to Eray because the names in the template, the worker's
+prompts and the worker's output check must change together.
 
 ## 4. Technology
 
@@ -87,6 +94,9 @@ A change in `dap/shared/` needs approval from both Baran and Okan.
 | Frontend | React + Vite + TypeScript + Tailwind CSS |
 | Tests | pytest, FastAPI TestClient |
 | Not used | Celery, Redis, RabbitMQ, Socket.io, WebSocket, SSE, LangChain, LangGraph, PostgreSQL, cloud LLM APIs |
+
+This table is for the platform itself. The application the agents generate
+uses its own, smaller stack (section 12).
 
 ## 5. Ports, addresses, environment variables
 
@@ -118,6 +128,8 @@ Task flow: `pending` -> `assigned` (master chose an agent) -> `in_progress`
 with `attempt` + 1, at most 3 attempts.
 
 The Sprint 1 decomposer produces only `frontend`, `backend`, `database`, `testing`.
+From Sprint 3 it produces exactly one task of each of these four types, in a
+fixed order (section 12.2).
 
 ## 7. Data models
 
@@ -169,6 +181,7 @@ All paths start with `/api/v1`. Endpoints called by workers need the
 | 1 | `POST /projects/{id}/assign` | - | list of Task with `assigned_agent_id` and `assignment_reason` | frontend |
 | 3 | `GET /agents/{agent_id}/tasks/next` | - | 200 Task or 204 | worker |
 | 3 | `POST /tasks/{id}/result` | TaskResult | 200 Task | worker |
+| 3 | `GET /tasks/{id}/inputs` | - | 200 list of `{path, content}`: the files of the tasks in `depends_on` (section 12.2); 404 | worker |
 | 4 | `POST /tasks/{id}/reassign` | - | 200 Task | frontend |
 | 5 | `GET /metrics/agents` | - | time, success rate, tokens per agent | frontend |
 
@@ -240,8 +253,10 @@ Agreed behaviour between modules:
 - For decomposition the model is asked for
   `{"tasks": [{"key", "title", "description", "type", "depends_on"}]}`, where
   `key` is a temporary name and `depends_on` lists keys. The decomposer turns
-  keys into UUIDs. The mock mode of `chat()` returns this shape when
-  `json_mode=True`, and the text `mock response` otherwise.
+  keys into UUIDs. From Sprint 3 the answer also carries the project's
+  records: `{"records": [...], "tasks": [...]}` (section 12.3). The mock mode
+  of `chat()` returns this shape, `records` included, when `json_mode=True`,
+  and the text `mock response` otherwise.
 - When the model cannot be reached `chat()` raises `RuntimeError`.
   `/decompose` then sets the project to `failed` and answers 502.
 - `/decompose` on a project that already has tasks returns the existing tasks.
@@ -269,7 +284,7 @@ for it (section 8). No other type exists; a new one needs a contract change.
 | `documentation` | README and usage notes of the generated app | master, optional | 5 | 0.1 | 0.4 | 0.5 |
 
 Until Sprint 4 the decomposer produces only `frontend`, `backend`, `database`
-and `testing`. The weights live as constants in `dap/master/core/selector.py`;
+and `testing`; in Sprint 3 exactly one of each (section 12.2). The weights live as constants in `dap/master/core/selector.py`;
 tuning them is a Sprint 5 activity.
 
 ## 10. Capability measurement (from Sprint 2)
@@ -314,15 +329,124 @@ Definition of Done:
 The agents do not write an application from scratch. They fill in a fixed
 template, so small local models can succeed and a broken part is easy to find:
 
-- Frontend: plain HTML and JavaScript, no build step.
-- Backend: FastAPI with SQLite.
+- Frontend: plain HTML and JavaScript, no framework, no build step.
+- Backend: FastAPI with SQLite through the standard `sqlite3` module.
 - Each task writes its own files; two tasks never write the same file.
 
 The bar for the demo: the generated application starts and one or two basic
-operations work. The template gets its own folder in Sprint 3.
+operations work.
 
-Before the tasks are handed out, the master writes one short sketch of the
-generated app's endpoints and tables and adds it to every task as context,
-so no agent invents its own endpoints or tables. Its exact shape is fixed in
-Sprint 3. The files of a project go to `workspace/<project_id>/`, which is
-never committed.
+The template and the prompts never name an application domain (library,
+shop and so on). Records, fields and rules come only from the requirement text.
+
+### 12.1 Folder layout
+
+The template lives in `templates/webapp/` (owner: Eray, section 3). For every
+project the master copies it to `workspace/<project_id>/`, which is never
+committed. The tasks then fill in their files there:
+
+```text
+workspace/<project_id>/
+  backend/database.py   database task
+  backend/main.py       backend task
+  backend/db.py         ready helpers: fetch_all, fetch_one, execute; no agent writes it
+  frontend/index.html   frontend task; HTML and JavaScript in one file
+  frontend/lib.js       ready helpers: api, renderTable, formData, fillForm, showMessage, ...; no agent writes it
+  frontend/style.css    ready; no agent writes it
+  tests/test_app.py     testing task
+  README.md             ready; no agent writes it
+  requirements.txt      ready; no agent writes it
+  .gitignore            ready; no agent writes it
+```
+
+Every template file starts with a comment that says what goes into the file
+and which names the other files rely on. The worker reads the comment of its
+target file from `templates/webapp/` and puts it in the prompt. The comments
+follow section 12.3; if they disagree, this contract wins and the template is
+corrected.
+
+From Sprint 3 a task's file is written straight into `workspace/<project_id>/`,
+over the template file with the same path; a retry overwrites it again. The
+per-run folder `workspace/<project_id>/<run_id>/` of Sprint 2 is not used for
+the generated application.
+
+### 12.2 One task, one file
+
+| Task type | Files it fills | Depends on |
+| --- | --- | --- |
+| `database` | `backend/database.py` | - |
+| `backend` | `backend/main.py` | `database` |
+| `frontend` | `frontend/index.html` | `backend` |
+| `testing` | `tests/test_app.py` | `backend`, `frontend` |
+| (integrator / master) | `README.md`, `requirements.txt`, `.gitignore`, `backend/db.py`, `frontend/lib.js`, `frontend/style.css` | - |
+
+- In Sprint 3 the decomposer produces exactly one task of each of the four
+  code types, in the order of this table and with these dependencies. The
+  model writes only the title and the description. The first task of each
+  type in the answer is used; its `key` and `depends_on` and any further task
+  of the same type are ignored.
+- The files in the second column are the task's target files. The worker
+  takes them from this table by task type and writes only them. Any other
+  file in the model's answer is not sent; an answer without its target file
+  is unusable and is asked again once.
+- Every task receives the files of the tasks it depends on through
+  `GET /tasks/{id}/inputs` (section 8), so it reads column and field names
+  from them instead of guessing.
+
+### 12.3 The sketch
+
+Before the tasks are handed out (during `/decompose`), the master writes one
+short sketch and adds it to every task, so no agent invents its own endpoints
+or tables. The sketch has two layers and is small on purpose.
+
+**Layer 1: the pattern, fixed in the template.** `<things>` is a plural
+`snake_case` table name, `<thing>` its singular.
+
+- Tables: one table `<things>` per record. Every table has
+  `id INTEGER PRIMARY KEY AUTOINCREMENT`. A link to another table is
+  `<thing>_id INTEGER REFERENCES <things>(id)`.
+- `backend/database.py`, for every table: `list_<things>(search=None)`,
+  `get_<thing>(<thing>_id)`, `add_<thing>(...)`,
+  `update_<thing>(<thing>_id, ...)`, `delete_<thing>(<thing>_id)`; and once
+  `init_db()`, which can run again and again. A broken business rule raises
+  `ValueError`; the API turns it into HTTP 400.
+- `backend/main.py` endpoints, for every table:
+
+  | Method and path | Answer |
+  | --- | --- |
+  | `GET /api/<things>?search=...` | 200 list |
+  | `GET /api/<things>/{id}` | 200 record; 404 |
+  | `POST /api/<things>` | 201 record |
+  | `PUT /api/<things>/{id}` | 200 record; 404 |
+  | `DELETE /api/<things>/{id}` | 204 |
+
+  Once: `GET /api/stats`. One route for every action the requirement names,
+  for example `POST /api/<things>/{id}/complete`.
+- `frontend/index.html` element ids, for every table: `stat-<things>`,
+  `section-<things>`, `search-<things>`, `form-<things>`, `list-<things>`.
+
+These paths belong to the generated application. They are not master
+endpoints and have no `/api/v1` prefix (section 8).
+
+**Layer 2: the project's records, written by the master.** The sketch itself
+is only the list of table names. From Sprint 3 the decomposer asks the model
+for:
+
+```text
+{"records": ["customers", "orders"],
+ "tasks": [{"key", "title", "description", "type", "depends_on"}]}
+```
+
+- `records`: plural `snake_case` table names, at least one, at most 12. An
+  answer without a usable `records` list is broken and is asked again
+  (section 8).
+- The master adds this line at the end of every task's description:
+
+  ```text
+  Records: customers, orders. This task covers all of them.
+  ```
+
+- The master writes no endpoints, function names or element ids; they follow
+  from the table names and layer 1. Columns are not in the sketch: the
+  `database` task chooses them, and the later tasks read them from
+  `backend/database.py`.
