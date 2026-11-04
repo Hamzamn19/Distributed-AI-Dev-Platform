@@ -154,9 +154,9 @@ Eray's Sprint 2 card; this section is the configuration it will read.
 | agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | 6.0 | Eray-PC | 2026-10-24 |
 | agent-hamza | gemma4-26b-a4b | 100 | 100 | 100 | 89.6 | Hamza-PC | 2026-10-24 |
 | agent-fatma | to be decided | | | | | | |
-| agent-can | to be decided | | | | | | |
-| agent-abdurrahman | to be decided | | | | | | |
-| agent-okan | to be decided | | | | | | |
+| agent-can | qwen2.5-coder:7b | 100 | 50 | 100 | 7.4 | Can-PC | 2026-11-04 |
+| agent-abdurrahman | qwen3:4b | 100 | 100 | 100 | 54.2 | Abdurrahman-PC | 2026-11-04 |
+| agent-okan | qwen2.5-coder:7b-instruct-q3_K_M | 100 | 50 | 100 | 5.9 | Okan-PC | 2026-11-04 |
 
 Rows marked `—` were measured before the script printed tokens (21 October);
 re-run them once to fill the speed column.
