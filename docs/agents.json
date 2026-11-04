@@ -4,9 +4,9 @@
     "name": "Fatma-PC",
     "owner": "Fatma",
     "role_hint": "frontend",
-    "model": "qwen3:4b",
+    "model": "qwen2.5-coder:3b",
     "provider": "ollama",
-    "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
+    "capabilities": {"coding": 100, "reasoning": 0, "context": 100}
   },
   {
     "agent_id": "agent-eray",
