@@ -110,7 +110,7 @@ def test_worker_completes_a_task_end_to_end(monkeypatch, _isolated):
 
     assert task.status == TaskStatus.COMPLETED
     assert task.assigned_agent_id == "agent-test"
-    files = list(_isolated.glob(f"{project_id}/*/backend/main.py"))
+    files = list(_isolated.glob(f"{project_id}/backend/main.py"))
     assert len(files) == 1 and files[0].read_text() == "print('hello')\n"
     # The prompt carries the task and the project's requirement text.
     prompt = calls[0][1]["content"]
@@ -205,17 +205,17 @@ def test_files_go_under_the_task_type_folder():
     assert [f.path for f in files] == ["backend/main.py", "backend/app.py"]
 
 
-def test_clashing_files_turn_into_a_failure_and_a_requeue(monkeypatch):
+def test_a_later_task_overwrites_the_same_file_in_the_project_folder(monkeypatch, _isolated):
     answers = [
-        json.dumps({"summary": "one", "files": [{"path": "notes.md", "content": "first"}]}),
-        json.dumps({"summary": "two", "files": [{"path": "notes.md", "content": "second"}]}),
+        json.dumps({"summary": "one", "files": [{"path": "main.py", "content": "first"}]}),
+        json.dumps({"summary": "two", "files": [{"path": "main.py", "content": "second"}]}),
     ]
     monkeypatch.setattr(executor, "chat", _fake_chat(answers))
     project = repositories.create_project(ProjectCreate(
         name="Clash", requirement_text="Two backend tasks that write the same file.",
     ))
     repositories.create_tasks(project.id, [
-        TaskCreate(id=f"t-{n}", title=f"Task {n}", description="write notes",
+        TaskCreate(id=f"t-{n}", title=f"Task {n}", description="write backend",
                    type=TaskType.BACKEND, depends_on=[])
         for n in (1, 2)
     ])
@@ -226,4 +226,6 @@ def test_clashing_files_turn_into_a_failure_and_a_requeue(monkeypatch):
     second = worker.poll_once()
 
     assert first.status == TaskStatus.COMPLETED
-    assert second.status == TaskStatus.PENDING and second.attempt == 1  # requeued, not stuck
+    # Contract 12.1: files are written over each other, there is no clash any more.
+    assert second.status == TaskStatus.COMPLETED
+    assert (_isolated / project.id / "backend" / "main.py").read_text() == "second"

@@ -15,7 +15,12 @@ Paths are relative to /api/v1 (docs/contracts/PROJECT_CONTRACT.md):
         result requeues the task with attempt + 1 while the contract allows
         more attempts (section 6: at most 3 attempts).
 
-Both need the X-Agent-Token header (shared agreement 3).
+    GET  /tasks/{id}/inputs  -> 200 list[GeneratedFile] ({path, content}), 404
+        The files of the tasks in depends_on (contract 12.2): for each
+        dependency the files of its newest successful result; when two
+        dependencies hold the same path, the later dependency wins.
+
+All three need the X-Agent-Token header (shared agreement 3).
 
 Run identifier: there is no runs table in the contract, so the master keeps
 one UUID4 per project execution in memory. A requeued task rotates the
@@ -36,11 +41,20 @@ from fastapi import APIRouter, Depends, HTTPException, Response
 
 from dap.master.api.agents import require_agent_token
 from dap.master.db import repositories
+from dap.master.db import results as results_db
 from dap.master.db.results import store_task_result
-from dap.shared.enums import TaskStatus
-from dap.shared.schemas import Task, TaskResult
+from dap.shared.enums import TaskStatus, TaskType
+from dap.shared.schemas import GeneratedFile, Task, TaskResult
 
 router = APIRouter(tags=["worker"])
+
+# Contract 12.2: only the stored task type determines its output file.
+_TASK_OUTPUT_PATH = {
+    TaskType.DATABASE: "backend/database.py",
+    TaskType.BACKEND: "backend/main.py",
+    TaskType.FRONTEND: "frontend/index.html",
+    TaskType.TESTING: "tests/test_app.py",
+}
 
 MAX_ATTEMPTS = 3
 workspace_root = Path("workspace")
@@ -79,7 +93,8 @@ def next_task(agent_id: str) -> Task | Response:
 
     for project in repositories.list_projects():
         for task in repositories.list_tasks(project.id):
-            if task.status == TaskStatus.ASSIGNED and task.assigned_agent_id == agent_id:
+            if (task.status == TaskStatus.ASSIGNED and task.assigned_agent_id == agent_id
+                    and _dependencies_completed(task)):
                 return task
 
     for project in repositories.list_projects():
@@ -90,6 +105,26 @@ def next_task(agent_id: str) -> Task | Response:
                 )
 
     return Response(status_code=204)
+
+
+@router.get(
+    "/tasks/{task_id}/inputs",
+    response_model=list[GeneratedFile],
+    dependencies=[Depends(require_agent_token)],
+)
+def task_inputs(task_id: str) -> list[GeneratedFile]:
+    """Files written by the tasks this task depends on."""
+    task = repositories.get_task(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail=f"Task {task_id!r} does not exist")
+    files: dict[str, GeneratedFile] = {}
+    for dependency_id in task.depends_on:
+        successful = [r for r in results_db.list_task_results(dependency_id) if r.success]
+        if not successful:
+            continue
+        for file in successful[-1].files:  # list is oldest first
+            files[file.path] = file
+    return list(files.values())
 
 
 @router.post(
@@ -113,6 +148,15 @@ def post_result(task_id: str, body: TaskResult) -> Task:
     if body.duration_ms < 0 or body.tokens_used < 0:
         raise HTTPException(
             status_code=422, detail="Result duration and token count must be nonnegative"
+        )
+
+    expected = _TASK_OUTPUT_PATH.get(task.type)
+    paths = [file.path for file in body.files]
+    if (body.success and (expected is None or paths != [expected])) or (not body.success and paths):
+        raise HTTPException(
+            status_code=422,
+            detail=(f"Successful result must contain exactly {expected!r}"
+                    if body.success else "Failed result must not contain files"),
         )
 
     try:

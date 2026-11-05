@@ -1,7 +1,8 @@
 """S2-05 local result/event persistence, ready for Master integration review.
 
 Uses the unchanged shared TaskResult payload. Master supplies one run ID per
-execution and an explicit workspace root. These additive helper signatures
+execution (it keys the stored result) and an explicit workspace root. Files go
+straight to <root>/<project_id>/ over the template (contract v1.2, 12.1). These additive helper signatures
 must be adopted by the API owner; existing contract functions are unchanged.
 """
 
@@ -14,7 +15,7 @@ from sqlalchemy import select
 
 from dap.master.db.database import SessionLocal, init_db
 from dap.master.db.models import AgentModel, EventModel, ProjectModel, TaskModel, TaskResultModel
-from dap.master.db.workspace import save_generated_files
+from dap.master.db.workspace import write_project_files
 from dap.shared.enums import TaskStatus
 from dap.shared.schemas import TaskResult
 
@@ -102,7 +103,7 @@ def store_task_result(data: TaskResult, *, run_id: str, workspace_root: Path) ->
         if existing is not None:
             if _payload(existing) != data:
                 raise ValueError("A different result already exists for this task/run")
-            save_generated_files(task.project_id, run_id, data.files, workspace_root=workspace_root)
+            write_project_files(task.project_id, data.files, workspace_root=workspace_root)
             return _payload(existing)
         if task.status not in (TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS):
             raise ValueError("Task must be assigned or in progress before accepting a result")
@@ -120,5 +121,5 @@ def store_task_result(data: TaskResult, *, run_id: str, workspace_root: Path) ->
             message=json.dumps({"run_id": run_id, "summary": data.summary}), created_at=now,
         ))
         session.flush()
-        save_generated_files(task.project_id, run_id, data.files, workspace_root=workspace_root)
+        write_project_files(task.project_id, data.files, workspace_root=workspace_root)
     return data

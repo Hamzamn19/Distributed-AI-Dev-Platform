@@ -26,6 +26,27 @@ def test_create_project_returns_contract_project():
     uuid.UUID(project.id, version=4)
 
 
+def test_create_project_copies_the_template_into_its_workspace(tmp_path):
+    from dap.master.api import tasks as tasks_api
+
+    project = _create()
+    folder = tasks_api.workspace_root / project["id"]
+    assert (folder / "backend" / "main.py").is_file()
+    assert (folder / "tests" / "test_app.py").is_file()
+    assert not any(p.name == "__pycache__" for p in folder.rglob("*"))
+
+
+def test_create_project_fails_clearly_when_the_template_is_missing(monkeypatch, tmp_path):
+    from dap.master.core import project_template
+
+    monkeypatch.setattr(project_template, "TEMPLATE_DIR", tmp_path / "nope")
+    monkeypatch.setattr(projects, "copy_template",
+                        lambda pid, **kw: project_template.copy_template(pid, **kw))
+    response = client.post("/api/v1/projects", json=BODY)
+    assert response.status_code == 500
+    assert "template" in response.json()["detail"].lower()
+
+
 @pytest.mark.parametrize("body", [
     {"name": "x", "requirement_text": "short"},
     {"name": "x"},
