@@ -9,8 +9,11 @@ Owner: Eray. What it does:
    a long model call does not make the agent look offline; on 404 it registers
    again.
 3. Asks for work every POLL_INTERVAL_SEC (GET /agents/{id}/tasks/next).
-4. Runs a task with the local model (status busy), posts the TaskResult
-   (one retry when the post fails), then goes back to idle.
+4. Runs a task with the local model (status busy): from Sprint 3 it fills the
+   task's one template file, with the files of the tasks it depends on
+   (GET /tasks/{id}/inputs) in the prompt. Posts the TaskResult (one retry when
+   the post fails; a refused file becomes a failure, so the task is requeued
+   instead of staying assigned), then goes back to idle.
 5. Ctrl+C stops it cleanly and sends a last heartbeat with status offline.
 
 Settings come only from .env through dap/worker/config.py.
@@ -86,10 +89,10 @@ class Worker:
                 return self.client.post_result(result)
             except MasterError as exc:
                 code = exc.status_code
-                if result.files and (code == 409 or code >= 500):
-                    # The master could not store the files (for example they clash
-                    # with this run's output). Report a failure without files, so
-                    # the master requeues the task instead of leaving it assigned.
+                if result.files and (code in (409, 422) or code >= 500):
+                    # The master refused or could not store the file (for example a
+                    # wrong path, 422). Report a failure without files, so the master
+                    # requeues the task instead of leaving it assigned forever.
                     detail = exc.text[:200]
                     log.warning("master refused the files (%s %s); reporting a failure", code, detail)
                     result = result.model_copy(update={
@@ -115,12 +118,19 @@ class Worker:
         self.heartbeat_once()  # tell the master right away that this agent is busy
         try:
             project = None
+            inputs = []
             try:
                 project = self.client.get_project(task.project_id)
             except MASTER_ERRORS:
                 pass  # the task can still run without the requirement text
+            try:
+                inputs = self.client.get_inputs(task.id)
+            except MASTER_ERRORS as exc:
+                log.warning("could not fetch the input files: %s", exc)
+            if inputs:
+                log.info("input files: %s", ", ".join(f.path for f in inputs))
             result = execute_task(task, self.settings.agent_id,
-                                  project.requirement_text if project else None)
+                                  project.requirement_text if project else None, inputs)
             if result.success:
                 log.info("done: %s file(s), %s tokens, %s ms",
                          len(result.files), result.tokens_used, result.duration_ms)
