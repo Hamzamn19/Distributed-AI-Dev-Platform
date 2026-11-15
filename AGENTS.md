@@ -19,7 +19,7 @@ everything as simple as a course project allows.
    | --- | --- |
    | Baran | `dap/master/api/`, `dap/master/core/`, `dap/master/cli.py`, `dap/master/main.py` |
    | Can | `dap/master/db/` |
-   | Eray | `dap/worker/`, `dap/shared/llm_client.py` |
+   | Eray | `dap/worker/`, `dap/shared/llm_client.py`, `templates/` |
    | Fatma | `frontend/` |
    | Abdurrahman | `scripts/`, `tests/`, `.github/`, `docs/SETUP.md`, root files |
    | Okan | `docs/` (except `docs/sprints/`), `AGENTS.md` |
