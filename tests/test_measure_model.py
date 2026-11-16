@@ -143,4 +143,5 @@ def test_write_scores_updates_one_agent(tmp_path):
     entries = {e["agent_id"]: e for e in json.loads(target.read_text(encoding="utf-8"))}
     assert entries["agent-eray"]["model"] == "qwen2.5-coder:7b"
     assert entries["agent-eray"]["capabilities"] == {"coding": 75, "reasoning": 50, "context": 100}
-    assert entries["agent-can"]["capabilities"] == {"coding": 50, "reasoning": 50, "context": 50}
+    before = {e["agent_id"]: e for e in json.loads(mm.AGENTS_JSON.read_text(encoding="utf-8"))}
+    assert entries["agent-can"] == before["agent-can"]  # the other agents are not touched
