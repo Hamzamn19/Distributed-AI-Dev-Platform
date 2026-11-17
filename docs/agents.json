@@ -4,9 +4,9 @@
     "name": "Fatma-PC",
     "owner": "Fatma",
     "role_hint": "frontend",
-    "model": "qwen3:4b",
+    "model": "qwen2.5-coder:3b",
     "provider": "ollama",
-    "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
+    "capabilities": {"coding": 55, "reasoning": 30, "context": 50}
   },
   {
     "agent_id": "agent-eray",
@@ -15,7 +15,7 @@
     "role_hint": "backend",
     "model": "qwen2.5-coder:7b",
     "provider": "ollama",
-    "capabilities": {"coding": 100, "reasoning": 50, "context": 100}
+    "capabilities": {"coding": 80, "reasoning": 55, "context": 70}
   },
   {
     "agent_id": "agent-can",
@@ -24,7 +24,7 @@
     "role_hint": "database",
     "model": "qwen2.5-coder:7b",
     "provider": "ollama",
-    "capabilities": {"coding": 100, "reasoning": 50, "context": 100}
+    "capabilities": {"coding": 80, "reasoning": 55, "context": 70}
   },
   {
     "agent_id": "agent-abdurrahman",
@@ -33,7 +33,7 @@
     "role_hint": "testing",
     "model": "qwen3:4b",
     "provider": "ollama",
-    "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
+    "capabilities": {"coding": 65, "reasoning": 75, "context": 70}
   },
   {
     "agent_id": "agent-okan",
@@ -42,7 +42,7 @@
     "role_hint": "integration",
     "model": "qwen2.5-coder:7b-instruct-q3_K_M",
     "provider": "ollama",
-    "capabilities": {"coding": 100, "reasoning": 50, "context": 100}
+    "capabilities": {"coding": 75, "reasoning": 50, "context": 65}
   },
   {
     "agent_id": "agent-hamza",
@@ -51,6 +51,6 @@
     "role_hint": "code_review",
     "model": "gemma-4-26b-a4b-iq2_xxs",
     "provider": "llama.cpp",
-    "capabilities": {"coding": 50, "reasoning": 50, "context": 50}
+    "capabilities": {"coding": 90, "reasoning": 90, "context": 90}
   }
 ]

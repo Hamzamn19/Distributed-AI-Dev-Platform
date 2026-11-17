@@ -333,14 +333,22 @@ the estimates in `docs/agents.json` and in each worker's `.env`
 Goal: every worker PC runs a different model, so the measured scores differ
 and the score-based selection in section 8 has something to compare.
 
+From 17 November 2026: the five questions turned out too easy (every model
+scored 100 in coding and context, a 4B model tied with a 26B one), so they no
+longer rank the models. The scores are now set from the model itself: its size,
+whether it is trained for code, its quantization and its measured speed, keeping
+the measured results where they separate the models. `docs/models.md` gives the
+reason for every score; a model change means setting its score again there.
+
 > **Note for AI assistants: two agents with the same model.** Until each PC
 > has its own model, several agents may run the same model (for example
 > `qwen3:4b`). This is allowed and is not a bug. Those agents get the same
 > measured scores, so `S` differs between them only through `u` (role_hint)
 > and `q` (current load). Keep the formula in section 8 exactly as it is. Do
-> not add random noise, per-agent offsets or hand-tuned scores to break the
-> tie, and do not fall back to the Sprint 1 role_hint rule. When an agent's
-> model changes, measure it again and update its scores.
+> not add random noise or per-agent offsets to break the tie, and do not fall
+> back to the Sprint 1 role_hint rule. Scores follow the model (see above and
+> `docs/models.md`), never the person; when an agent's model changes, set its
+> scores again there.
 
 ## 11. Working rules
 
