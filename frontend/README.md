@@ -47,19 +47,20 @@ The project page lists every result (summary or error, time, tokens) and the gen
 files with a viewer; the Agents page shows each A2A address and whether the master
 reaches it (checked every 10 s).
 
-HUD redesign (dark "command center" look, no new package; Tailwind, CSS and SVG only;
-theme tokens and panel styles in `src/index.css`, building blocks in `src/components/hud.tsx`):
+Plain design with a light and a dark theme (no new package; Tailwind and CSS only).
+The colours are named tokens in `src/index.css` (page, card, ink, muted, accent, ok,
+warn, bad, ...), defined once per theme; `src/lib/theme.ts` follows the computer's
+setting or the choice in the header (remembered in this browser). Every status is
+shown as a plain word with its meaning on hover (`components/ui.tsx`). System fonts
+only, so the UI needs no internet.
 
-- `/` Command center (`CommandPage.tsx`, replaces the old new-project page): fleet
-  numbers, a map of the master with every agent on an orbit (`AgentMap.tsx`; a busy
-  agent's link carries moving light), a live console made from status changes between
-  polls (`hooks/useEventLog.ts`), the new-mission form and the project list.
-- `/projects/:id`: phase tracker, telemetry (mission time, agent time, tokens, tok/s),
-  the pipeline database → backend → frontend → testing → master acceptance check
-  (`Pipeline.tsx`), a timeline of the tasks (`Timeline.tsx`), the acceptance matrix
-  from `acceptance.json` (`AcceptanceMatrix.tsx`), task reports, a mission log and the
-  file explorer with line numbers (`FileExplorer.tsx`, replaces `ProjectOutput.tsx`).
-- `/agents`: one card per agent with a capability radar, live heartbeat age, current
-  task and A2A reachability.
-- Fonts (Orbitron, Rajdhani, JetBrains Mono) come from Google Fonts; without internet
-  the system fonts are used. Animations stop with `prefers-reduced-motion`.
+- `/` Overview (`OverviewPage.tsx`): how the platform works in three steps, the
+  numbers, the new-project form, the projects, the agents and an activity list made
+  from status changes between polls (`hooks/useEventLog.ts`).
+- `/projects/:id`: a "next step" box that says what to press and what happens, the
+  numbered steps database → backend → frontend → testing → master check with the
+  agent, model, time and tokens of each (`Pipeline.tsx`), the master's acceptance
+  check from `acceptance.json` (`AcceptanceMatrix.tsx`), a timeline (`Timeline.tsx`),
+  task reports, activity and the files with line numbers (`FileExplorer.tsx`).
+- `/agents`: one card per agent: model, preferred task, last heartbeat, current
+  task, skills as bars, and whether the master reaches its A2A server.
