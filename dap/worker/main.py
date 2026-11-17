@@ -11,7 +11,8 @@ Owner: Eray. What it does:
 3. Asks for work every POLL_INTERVAL_SEC (GET /agents/{id}/tasks/next).
 4. Runs a task with the local model (status busy): from Sprint 3 it fills the
    task's one template file, with the files of the tasks it depends on
-   (GET /tasks/{id}/inputs) in the prompt. Posts the TaskResult (one retry when
+   (GET /tasks/{id}/inputs) in the prompt; when those files cannot be fetched
+   it does not run the task and asks again at the next poll. Posts the TaskResult (one retry when
    the post fails; a refused file becomes a failure, so the task is requeued
    instead of staying assigned), then goes back to idle.
 5. Ctrl+C stops it cleanly and sends a last heartbeat with status offline.
@@ -112,23 +113,39 @@ class Worker:
                     self.stop.wait(RETRY_WAIT_SEC)
         return None
 
+    def fetch_inputs(self, task: Task) -> list | None:
+        """The files of the tasks this task depends on, or None when they are not there.
+
+        None means: do not run the task now. Without those files the model would
+        guess the names of the earlier tasks (PR #65 review). The task stays
+        assigned to this agent, and the next poll tries again.
+        """
+        try:
+            inputs = self.client.get_inputs(task.id)
+        except MASTER_ERRORS as exc:
+            log.warning("could not fetch the input files (%s); trying the task again later", exc)
+            return None
+        if task.depends_on and not inputs:
+            log.warning("task %s depends on %s but the master has no files for it yet; "
+                        "trying again later", task.id, ", ".join(task.depends_on))
+            return None
+        if inputs:
+            log.info("input files: %s", ", ".join(f.path for f in inputs))
+        return inputs
+
     def run_task(self, task: Task) -> Task | None:
         log.info("task %s (%s): %s", task.id, task.type, task.title)
+        inputs = self.fetch_inputs(task)
+        if inputs is None:
+            return None
         self._set_state(AgentStatus.BUSY, task.id)
         self.heartbeat_once()  # tell the master right away that this agent is busy
         try:
             project = None
-            inputs = []
             try:
                 project = self.client.get_project(task.project_id)
             except MASTER_ERRORS:
                 pass  # the task can still run without the requirement text
-            try:
-                inputs = self.client.get_inputs(task.id)
-            except MASTER_ERRORS as exc:
-                log.warning("could not fetch the input files: %s", exc)
-            if inputs:
-                log.info("input files: %s", ", ".join(f.path for f in inputs))
             result = execute_task(task, self.settings.agent_id,
                                   project.requirement_text if project else None, inputs)
             if result.success:

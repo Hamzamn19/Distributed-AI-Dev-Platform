@@ -16,11 +16,14 @@ one JSON object:
 
     {"summary": "one or two sentences", "content": "the full file"}
 
-Only the target file is sent to the master. An answer without it is asked
-again once; after that the result is a failure and the master decides about a
-retry (contract section 6).
+Only the target file is sent to the master. An answer that cannot be used is
+asked again once, with the reason (issue #68): no target file, a Python file
+that does not parse, or the template's example sent back unchanged. After
+that the result is a failure and the master decides about a retry (contract
+section 6).
 """
 
+import ast
 import json
 import re
 import time
@@ -85,6 +88,8 @@ def build_messages(task: Task, target: str, requirement_text: str | None = None,
     if template:
         parts.append(f"Template version of {target} (replace its example, keep its rules):\n"
                      + template)
+    parts.append("Implement the project's own records from the task description; "
+                 "do not send the template's example back unchanged.")
     parts.append(f'Answer with {{"summary": "...", "content": "<the complete {target}>"}}.')
     return [
         {"role": "system", "content": SYSTEM_PROMPT},
@@ -135,7 +140,20 @@ def parse_answer(text: str, target: str) -> tuple[str, GeneratedFile]:
     if content is None or not content.strip():
         raise UnusableAnswer(f"the answer has no content for {target}")
     summary = str(data.get("summary") or f"Wrote {target}").strip()
-    return summary, GeneratedFile(path=target, content=_strip_fence(content))
+    content = _strip_fence(content)
+    if target.endswith(".py"):
+        try:
+            ast.parse(content, filename=target)
+        except SyntaxError as exc:
+            raise UnusableAnswer(f"invalid Python in {target}, line {exc.lineno}: {exc.msg}") from exc
+    return summary, GeneratedFile(path=target, content=content)
+
+
+def check_not_template(file: GeneratedFile, template_dir: Path = TEMPLATE_DIR) -> None:
+    """Raise UnusableAnswer when the file is the template's example, unchanged."""
+    original = template_text(file.path, template_dir)
+    if original is not None and file.content.strip() == original.strip():
+        raise UnusableAnswer(f"{file.path} is the unchanged template example")
 
 
 def execute_task(task: Task, agent_id: str, requirement_text: str | None = None,
@@ -162,8 +180,15 @@ def execute_task(task: Task, agent_id: str, requirement_text: str | None = None,
         tokens += reply.prompt_tokens + reply.completion_tokens
         try:
             summary, file = parse_answer(reply.text, target)
+            check_not_template(file)
         except UnusableAnswer as exc:
             error = f"model answer unusable: {exc}"
+            # Ask again and say why, so the model can correct this answer.
+            messages = messages + [
+                {"role": "assistant", "content": reply.text},
+                {"role": "user", "content": f"Your answer was rejected: {exc}. "
+                                            "Answer again with one complete JSON object."},
+            ]
             continue
         return TaskResult(
             task_id=task.id, agent_id=agent_id, success=True, summary=summary, files=[file],

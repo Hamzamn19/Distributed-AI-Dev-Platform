@@ -298,3 +298,112 @@ def test_a_later_task_overwrites_the_same_file_in_the_project_folder(monkeypatch
     # Contract 12.1: files are written over each other, there is no clash any more.
     assert second.status == TaskStatus.COMPLETED
     assert (_isolated / project.id / "backend" / "main.py").read_text() == "second"
+
+
+# ------------------------------------------------------------------ issue #68
+
+
+def test_broken_python_is_asked_again_with_the_reason(monkeypatch):
+    calls = []
+    answers = [json.dumps({"summary": "cut", "content": "def init_db(:\n"}),
+               json.dumps({"summary": "ok", "content": "def init_db():\n    pass\n"})]
+    monkeypatch.setattr(executor, "chat", _fake_chat(answers, calls))
+    _seed_task("t-py")
+    task = repositories.get_task("t-py")
+
+    result = executor.execute_task(task, "agent-test")
+
+    assert result.success and result.files[0].content.startswith("def init_db():")
+    assert len(calls) == 2
+    retry = calls[1]
+    assert retry[-2]["role"] == "assistant"  # the model sees its own rejected answer
+    assert "invalid Python in backend/main.py" in retry[-1]["content"]
+
+
+def test_broken_python_twice_is_a_failure_not_a_success(monkeypatch):
+    broken = json.dumps({"summary": "cut", "content": "class Item(:\n"})
+    monkeypatch.setattr(executor, "chat", _fake_chat([broken, broken]))
+    _seed_task("t-py2")
+
+    result = executor.execute_task(repositories.get_task("t-py2"), "agent-test")
+
+    assert not result.success and result.files == []
+    assert "invalid Python" in result.error
+
+
+def test_unchanged_template_is_a_failure_not_a_success(monkeypatch):
+    original = executor.template_text("backend/main.py")
+    assert original, "the template must have backend/main.py"
+    unchanged = json.dumps({"summary": "done", "content": original})
+    monkeypatch.setattr(executor, "chat", _fake_chat([unchanged, unchanged]))
+    _seed_task("t-same")
+
+    result = executor.execute_task(repositories.get_task("t-same"), "agent-test")
+
+    assert not result.success
+    assert "unchanged template example" in result.error
+
+
+def test_html_is_not_checked_as_python(monkeypatch):
+    monkeypatch.setattr(executor, "chat", _fake_chat([json.dumps({"content": "<p>def (</p>"})]))
+    project = repositories.create_project(ProjectCreate(
+        name="Html", requirement_text="Members keep a list of the things they own.",
+    ))
+    repositories.create_tasks(project.id, [TaskCreate(
+        id="t-html", title="Page", description="Records: things.", type=TaskType.FRONTEND, depends_on=[],
+    )])
+    assert executor.execute_task(repositories.get_task("t-html"), "agent-test").success
+
+
+# ------------------------------------------------- missing inputs (PR #65 review)
+
+
+def _two_tasks(monkeypatch, calls):
+    answers = [json.dumps({"summary": "db", "content": "def init_db():\n    pass\n"}),
+               json.dumps({"summary": "api", "content": "app = 1\n"})]
+    monkeypatch.setattr(executor, "chat", _fake_chat(answers, calls))
+    project = repositories.create_project(ProjectCreate(
+        name="Deps", requirement_text="Members keep a list of the things they own.",
+    ))
+    repositories.create_tasks(project.id, [
+        TaskCreate(id="t-db", title="Tables", description="Records: things.",
+                   type=TaskType.DATABASE, depends_on=[]),
+        TaskCreate(id="t-api", title="API", description="Records: things.",
+                   type=TaskType.BACKEND, depends_on=["t-db"]),
+    ])
+    worker = _worker()
+    worker.register()
+    assert worker.poll_once().id == "t-db"
+    return worker
+
+
+def test_task_waits_when_the_inputs_cannot_be_fetched(monkeypatch):
+    from dap.worker.master_client import MasterError
+
+    calls = []
+    worker = _two_tasks(monkeypatch, calls)
+    real_get_inputs = worker.client.get_inputs
+
+    def down(task_id):
+        raise MasterError(503, "master busy")
+    monkeypatch.setattr(worker.client, "get_inputs", down)
+
+    assert worker.poll_once() is None  # not run with missing context
+    assert len(calls) == 1  # the model was not asked for t-api
+    assert repositories.get_task("t-api").status == TaskStatus.ASSIGNED  # still ours
+    assert repositories.get_agent("agent-test").status == AgentStatus.IDLE
+
+    monkeypatch.setattr(worker.client, "get_inputs", real_get_inputs)
+    task = worker.poll_once()  # the next poll runs it with the files
+    assert task.id == "t-api" and task.status == TaskStatus.COMPLETED
+    assert "File backend/database.py" in calls[1][1]["content"]
+
+
+def test_task_with_dependencies_waits_for_their_files(monkeypatch):
+    calls = []
+    worker = _two_tasks(monkeypatch, calls)
+    monkeypatch.setattr(worker.client, "get_inputs", lambda task_id: [])
+
+    assert worker.poll_once() is None
+    assert len(calls) == 1
+    assert repositories.get_task("t-api").status == TaskStatus.ASSIGNED
