@@ -40,4 +40,11 @@ def init_db() -> None:
 
 
 # list_<things>, get_<thing>, add_<thing>, update_<thing>, delete_<thing> for every table,
-# then the functions of the business rules and actions
+# then the functions of the business rules and actions. A list with its search, for
+# example (in SQL, WHERE comes before ORDER BY):
+#     def list_<things>(search: str | None = None) -> list[dict]:
+#         sql, params = "SELECT * FROM <things>", ()
+#         if search:
+#             sql += " WHERE <text column> LIKE ? OR <other text column> LIKE ?"
+#             params = (f"%{search}%", f"%{search}%")
+#         return fetch_all(sql + " ORDER BY id DESC", params)

@@ -61,15 +61,18 @@ def real_mode(monkeypatch, tmp_path):
     monkeypatch.setenv("LLM_MOCK", "0")
     monkeypatch.setattr(executor, "REJECTED_DIR", tmp_path / "rejected")
     calls = []
+    temperatures = []  # None: chat's default
 
     def use(*answers):
         replies = iter(answers)
 
-        def fake_chat(messages, json_mode):
+        def fake_chat(messages, json_mode, **options):
             calls.append(messages)
+            temperatures.append(options.get("temperature"))
             return next(replies)
 
         monkeypatch.setattr(executor, "chat", fake_chat)
+        use.temperatures = temperatures
         return calls
 
     return use
@@ -116,6 +119,35 @@ def test_only_the_last_answer_goes_back_to_the_model(real_mode):
                       answer({"backend/main.py": GOOD_MAIN}))
     executor.execute(payload())
     assert len(calls[1]) == len(calls[2]) == len(calls[0]) + 2
+
+
+def test_the_same_answer_again_is_named_and_asked_with_more_variety(real_mode):
+    # Pre-test of 17 November: three identical answers with the same SQL mistake.
+    calls = real_mode(answer({"backend/main.py": BROKEN_MAIN}),
+                      answer({"backend/main.py": BROKEN_MAIN}),
+                      answer({"backend/main.py": GOOD_MAIN}))
+    executor.execute(payload())
+    assert "exactly the same as your previous one" not in calls[1][-1]["content"]
+    assert "exactly the same as your previous one" in calls[2][-1]["content"]
+    assert real_mode.temperatures == [None, None, executor.REPEAT_TEMPERATURE]
+
+
+def test_a_known_mistake_gets_its_likely_cause():
+    problem = 'sqlite3.OperationalError: near "WHERE": syntax error'
+    assert "WHERE part comes before ORDER BY" in executor.hint(problem)
+    assert "order of the SQL parts" in executor.hint('near "FROM": syntax error')
+    assert executor.hint("NameError: name 'x' is not defined") == ""
+
+
+def test_the_where_mistake_of_the_pre_test_is_sent_back_with_its_cause(real_mode):
+    database = GOOD_DATABASE.replace(
+        '"SELECT id, name FROM items WHERE name LIKE ? ORDER BY id"',
+        '"SELECT id, name FROM items ORDER BY id WHERE name LIKE ?"')
+    calls = real_mode(answer({"backend/database.py": database}),
+                      answer({"backend/database.py": GOOD_DATABASE}))
+    executor.execute(database_task())
+    assert 'near "WHERE": syntax error' in calls[1][-1]["content"]
+    assert "WHERE part comes before ORDER BY" in calls[1][-1]["content"]
 
 
 # ---------------------------------------- the checks of what the next agents rely on
@@ -224,6 +256,36 @@ def test_some_failing_tests_are_accepted_after_the_last_correction(real_mode):
     assert result.summary == "done (corrected 2x) (tests: 1 of 2 pass.)"
 
 
+def test_backend_without_the_routes_of_a_table_is_sent_back():
+    # Pre-test of 17 November: database.py had borrowed_books, main.py left it out.
+    database = GOOD_DATABASE + "\n\ndef list_loans(search=None):\n    return []\n"
+    problem = executor.check_routes_cover_tables(GOOD_MAIN, database)
+    assert problem.startswith("backend/main.py has no routes for loans")
+    assert executor.check_routes_cover_tables(GOOD_MAIN, GOOD_DATABASE) is None
+
+
+def test_a_page_calling_missing_routes_is_told_to_drop_that_part():
+    assert "Delete from the page every part" in executor.hint(
+        "frontend/index.html calls /api/loans, which backend/main.py does not have.")
+
+
+def test_tests_without_the_ready_lines_still_get_their_client():
+    # Pre-test of 17 November: the model dropped the top of test_app.py and wrote
+    # def test_x(client); the ready tests/conftest.py now gives that fixture.
+    tests = ('def test_add_and_list_items(client):\n'
+             '    assert client.post("/api/items", json={"name": "A"}).status_code == 201\n'
+             '    assert any(i["name"] == "A" for i in client.get("/api/items").json())\n')
+    assert executor.verify(make_testing_payload(), output(tests__test_app_py=tests)) is None
+
+
+def test_a_test_that_errors_in_its_setup_is_sent_back_with_the_cause():
+    tests = MOCK_FILES["tests/test_app.py"] + "\n\ndef test_x(member):\n    assert member\n"
+    problem = executor.verify(make_testing_payload(), output(tests__test_app_py=tests))
+    assert problem.startswith(f"{executor.TESTS_FAIL}: 1 of 2 pass.")
+    assert "ERROR tests/test_app.py::test_x" in problem
+    assert "fixture 'member' not found" in problem
+
+
 def test_tests_that_cannot_run_are_a_real_problem():
     tests = MOCK_FILES["tests/test_app.py"].replace("def test_add_and_list_items", "def check_x")
     problem = executor.verify(make_testing_payload(), output(tests__test_app_py=tests))
@@ -265,7 +327,7 @@ def test_the_older_json_answer_is_still_read():
 
 def test_the_model_is_asked_without_json_mode(real_mode, monkeypatch):
     modes = []
-    monkeypatch.setattr(executor, "chat", lambda messages, json_mode: (
+    monkeypatch.setattr(executor, "chat", lambda messages, json_mode, **options: (
         modes.append(json_mode), answer({"backend/main.py": GOOD_MAIN}))[1])
     executor.execute(payload())
     assert modes == [False]
@@ -342,6 +404,7 @@ def test_an_error_in_another_agents_file_is_named_as_such():
     task.dependency_files = [GeneratedFile(path="backend/database.py", content=ROUND_DATABASE)]
     main = GOOD_MAIN.replace("database.list_items(", "database.list_tasks(")
     main = main.replace("_item(", "_task(")  # get_, add_, update_, delete_item -> _task
+    main = main.replace("/api/items", "/api/tasks")  # routes for the tasks table
     problem = executor.verify(task, output(backend__main_py=main))
     assert "The error is inside backend/database.py, which another agent wrote" in problem
 

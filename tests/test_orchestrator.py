@@ -166,6 +166,19 @@ def test_independent_tasks_on_different_agents_run_in_parallel(db):
     assert fake.events[:2] == [("send", "database"), ("send", "frontend")]
 
 
+def test_a_second_run_sends_the_failed_tasks_again(db):
+    agent("a1"), agent("a2")
+    pid, _ = project(*APP)
+    assert orchestrator.run_project(pid, client=FakeA2A(fail=("database",)), poll_interval=0) \
+        == ProjectStatus.FAILED
+    again = FakeA2A()
+    assert orchestrator.run_project(pid, client=again, poll_interval=0) == ProjectStatus.COMPLETED
+    assert [p.type.value for _, p in again.sent] == ["database", "backend", "frontend", "testing"]
+    assert set(statuses(pid).values()) == {TaskStatus.COMPLETED}
+    tries = {t.type.value: t.attempt for t in repositories.list_tasks(pid)}
+    assert tries == {"database": 2, "backend": 1, "frontend": 1, "testing": 1}
+
+
 def test_a_failed_dependency_fails_the_tasks_after_it(db):
     agent("a1"), agent("a2")
     pid, _ = project(*APP)

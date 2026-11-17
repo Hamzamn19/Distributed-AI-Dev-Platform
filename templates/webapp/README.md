@@ -9,7 +9,7 @@ requirement document. `git log` shows which agent wrote which part.
 | `backend/main.py` | backend task: FastAPI routes under `/api` |
 | `frontend/index.html` | frontend task: the page, HTML and its JavaScript in one file |
 | `tests/test_app.py` | testing task: pytest tests of the API |
-| `backend/db.py`, `frontend/lib.js`, `frontend/style.css` | ready parts of the template |
+| `backend/db.py`, `frontend/lib.js`, `frontend/style.css`, `tests/conftest.py` | ready parts of the template |
 
 ## Run
 

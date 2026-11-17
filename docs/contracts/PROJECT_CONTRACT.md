@@ -383,7 +383,7 @@ writes the titles and descriptions); each task fills fixed files:
 | `backend` | `backend/main.py` | database |
 | `frontend` | `frontend/index.html` (the HTML and its JavaScript in one file) | backend |
 | `testing` | `tests/test_app.py` | backend, frontend |
-| (integrator) | `README.md`, `requirements.txt`, `.gitignore`, and the ready helpers `backend/db.py`, `frontend/lib.js`, `frontend/style.css` (no agent writes them) | - |
+| (integrator) | `README.md`, `requirements.txt`, `.gitignore`, and the ready helpers `backend/db.py`, `frontend/lib.js`, `frontend/style.css`, `tests/conftest.py` (test database and the `client` fixture; no agent writes them) | - |
 
 The template and the prompts name no domain: the records, fields and rules come
 from the requirement and the task descriptions, so the instructor can choose any
@@ -392,8 +392,10 @@ on (`dap/worker/executor.py`, `verify()`): `init_db()` runs twice, every table h
 its `list_/get_/add_/update_/delete_` functions, `main.py` calls only defined
 database functions and its GET routes answer, the page calls only existing routes
 and element ids, and the generated tests run. A problem goes back to the model
-(at most two corrections); some failing generated tests are accepted after the
-last one, with the count in the task summary.
+(at most two corrections), with the likely cause of known mistakes (for example
+WHERE after ORDER BY); a repeated identical answer is named as such. Some failing
+or erroring generated tests are accepted after the last correction, with the
+count in the task summary.
 
 When every task is completed, the master runs its acceptance check
 (`dap/master/core/acceptance.py`, no model): it loads a copy of the application
@@ -449,7 +451,8 @@ and `ROLE_USER`, parts without a `kind` field (`{"text": ...}` or
 - At `/run`, a task whose agent is offline is assigned again among the online
   agents with the section 8 rule; with no online agent it fails with
   "no online agent". A task whose dependency failed fails with
-  "dependency failed". Reassigning failed tasks is Sprint 4.
+  "dependency failed". A new `/run` (the UI's "Run again") sends the failed tasks
+  again, with `attempt` + 1. Choosing another agent within one run is Sprint 4.
 
 Deviations from the specification, chosen for simplicity:
 

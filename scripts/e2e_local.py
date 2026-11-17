@@ -29,7 +29,7 @@ REQUIREMENT = REPO / "docs" / "sample_requirements" / "orta.md"
 EXPECTED_FILES = [
     ".gitignore", "README.md", "acceptance.json", "backend/database.py", "backend/db.py", "backend/main.py",
     "frontend/index.html", "frontend/lib.js", "frontend/style.css",
-    "requirements.txt", "tests/test_app.py",
+    "requirements.txt", "tests/conftest.py", "tests/test_app.py",
 ]
 
 

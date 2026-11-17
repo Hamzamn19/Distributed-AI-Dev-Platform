@@ -11,13 +11,17 @@ Python file really loads (verify(): the template, the dependency files and the
 new files are written to a temporary folder and each new .py file is run once).
 verify() then checks what the next agents rely on: init_db() runs twice and
 every table has its list_/get_/add_/update_/delete_ functions; main.py calls only
-defined database functions and its GET routes answer; the page calls only existing
+defined database functions, has routes for every table and its GET routes answer;
+the page calls only existing
 routes and element ids; the generated tests run (some failing tests are accepted
 after the last correction, with the count in the summary).
 
 Self-correction: when a check fails, the model gets the problem (for example
 "NameError: name 'database' is not defined") and answers again, at most
 FIX_ROUNDS times. Still wrong after that: TASK_STATE_FAILED with the problem.
+For known mistakes (HINTS) the problem also says the likely cause. A small model
+often answers a correction with the very same files: it is then told so, and the
+next answer is asked with more variety (REPEAT_TEMPERATURE).
 
 With LLM_MOCK=1 no model is asked: every target file gets a fixed, working
 content (MOCK_FILES), so the whole flow can be tested without Ollama.
@@ -120,6 +124,39 @@ def check_output(payload: DapTaskPayload, output: DapTaskOutput) -> None:
 
 
 FIX_ROUNDS = 2          # extra answers the model may give after a failed check
+REPEAT_TEMPERATURE = 0.7  # for the answer after one that repeated the previous answer
+
+# Error text -> the likely cause, in words a small model acts on. First match wins.
+HINTS: list[tuple[str, str]] = [
+    ('near "WHERE": syntax error',
+     "In SQL the WHERE part comes before ORDER BY and LIMIT. Build the query as "
+     'sql = "SELECT * FROM <table>", add " WHERE ..." only when there is a search, '
+     'and add " ORDER BY ..." at the very end.'),
+    (": syntax error",
+     "Check the order of the SQL parts: SELECT ... FROM ... JOIN ... WHERE ... GROUP BY "
+     "... ORDER BY ... LIMIT ..., and that every opened bracket and quote is closed."),
+    ("no such column",
+     "A query names a column that its CREATE TABLE does not have: use the exact column "
+     "names of your tables."),
+    ("no such table", "A query names a table that init_db() does not create."),
+    ("which backend/main.py does not have",
+     "Delete from the page every part that uses those paths: its section, table, form, "
+     "buttons and JavaScript. The page shows only what backend/main.py offers."),
+    ("fixture 'client' not found",
+     "Keep the ready lines above '--- write below this line ---' of tests/test_app.py: they "
+     "give the `client`; tests/conftest.py is ready and must not be written."),
+    ("UNIQUE constraint failed",
+     "init_db() inserts sample data that is already there: insert it only when the table "
+     "is empty."),
+]
+
+
+def hint(problem: str) -> str:
+    """The likely cause of a known mistake, or an empty string."""
+    for text, cause in HINTS:
+        if text in problem:
+            return f"Likely cause: {cause}"
+    return ""
 VERIFY_TIMEOUT_SEC = 60
 TESTS_TIMEOUT_SEC = 120
 # First words of the problem when only some generated tests fail. After the last
@@ -267,7 +304,7 @@ def _run(root: Path, args: list[str], what: str, timeout: int = VERIFY_TIMEOUT_S
     return f"{what}:\n" + _failing_line(lines, root, own) + "\n".join(lines[-4:])
 
 
-READY_FILES = ("backend/db.py", "frontend/lib.js")  # template parts no agent writes
+READY_FILES = ("backend/db.py", "frontend/lib.js", "tests/conftest.py")  # template parts no agent writes
 
 
 def _failing_line(lines: list[str], root: Path, own: set[str]) -> str:
@@ -326,6 +363,25 @@ def check_database_calls(main_source: str, database_source: str) -> str | None:
 
 
 _ROUTE = re.compile(r"@app\.(?:get|post|put|patch|delete)\(\s*[\"']([^\"']+)[\"']")
+_LIST_FUNCTION = re.compile(r"^def list_(\w+)\(", re.MULTILINE)
+
+
+def check_routes_cover_tables(main_source: str, database_source: str) -> str | None:
+    """Every table of database.py (a list_<things> function) has its /api/<things> routes.
+
+    Pre-test of 17 November: database.py had a third table, main.py left it out, and
+    the page then called routes that did not exist.
+    """
+    tables = _LIST_FUNCTION.findall(database_source)
+    routed = {path.split("/")[2] for path in _ROUTE.findall(main_source)
+              if path.startswith("/api/") and len(path.split("/")) > 2}
+    missing = [table for table in tables if table not in routed]
+    if not missing:
+        return None
+    return ("backend/main.py has no routes for " + ", ".join(missing) + ", although "
+            "backend/database.py has their tables (list_" + ", list_".join(missing) + "). "
+            "Add for each: GET /api/<things> (with ?search=), GET /api/<things>/{id}, "
+            "POST /api/<things>, PUT /api/<things>/{id} and DELETE /api/<things>/{id}.")
 _API_PATH = re.compile(r"[\"'`](/api/[^\"'`\s]*)")
 _ELEMENT = re.compile(r"getElementById\(\s*[\"'`]([^\"'`$]+)[\"'`]\s*\)")
 # An id given in markup the script builds, or set on an element: id="x", id=x, .id = "x"
@@ -409,23 +465,28 @@ def check_frontend(page: str, main_source: str) -> str | None:
 
 
 def run_generated_tests(root: Path) -> str | None:
-    """Run the generated tests; None when they all pass."""
+    """Run the generated tests; None when they all pass.
+
+    A test that errors in its setup (for example a fixture that does not exist) counts
+    like a failing one, and its cause (the "E ..." line) goes back to the model too.
+    """
     try:
         result = subprocess.run(
-            [sys.executable, "-m", "pytest", "-q", "-rf", "--tb=no", "-p", "no:cacheprovider",
+            [sys.executable, "-m", "pytest", "-q", "-rfE", "--tb=line", "-p", "no:cacheprovider",
              "tests"], cwd=root, capture_output=True, text=True, timeout=TESTS_TIMEOUT_SEC)
     except subprocess.TimeoutExpired:
         return f"the generated tests did not finish within {TESTS_TIMEOUT_SEC} s"
     if result.returncode == 0:
         return None
     lines = [line for line in result.stdout.strip().splitlines() if line.strip()]
-    failed = re.search(r"(\d+) failed", result.stdout)
-    if result.returncode == 1 and failed:
-        passed = re.search(r"(\d+) passed", result.stdout)
-        passed_count = int(passed.group(1)) if passed else 0
-        total = passed_count + int(failed.group(1))
-        failures = [line for line in lines if line.startswith("FAILED")][:12]
-        return (f"{TESTS_FAIL}: {passed_count} of {total} pass.\n" + "\n".join(failures)
+    count = lambda word: int(m.group(1)) if (m := re.search(rf"(\d+) {word}", result.stdout)) else 0
+    failed, errors = count("failed"), count("errors?")
+    if result.returncode == 1 and failed + errors:
+        total = count("passed") + failed + errors
+        listed = [line for line in lines if line.startswith(("FAILED", "ERROR"))][:12]
+        # the cause of each error, once: "E       fixture 'client' not found"
+        causes = list(dict.fromkeys(line[1:].strip() for line in lines if line.startswith("E ")))[:4]
+        return (f"{TESTS_FAIL}: {count('passed')} of {total} pass.\n" + "\n".join(listed + causes)
                 + "\nFix the tests that use wrong routes, fields, status codes or data; "
                   "backend/main.py and backend/database.py stay as they are.")
     if result.returncode == 5:
@@ -438,7 +499,8 @@ def verify(payload: DapTaskPayload, output: DapTaskOutput) -> str | None:
 
     Every new Python file must load. Then, by file: database.py survives a second
     init_db() and has the five functions of every table; main.py calls only defined
-    database functions and its GET routes answer; the page calls existing routes
+    database functions, has routes for every table and its GET routes answer; the page
+    calls existing routes
     and element ids; the generated tests run and pass. Returns the problem, or None.
     """
     written = {f.path for f in output.files}
@@ -467,6 +529,8 @@ def verify(payload: DapTaskPayload, output: DapTaskOutput) -> str | None:
                 return problem
         if "backend/main.py" in written:
             problem = (check_database_calls(text("backend/main.py"), text("backend/database.py"))
+                       or check_routes_cover_tables(text("backend/main.py"),
+                                                    text("backend/database.py"))
                        or _run(root, ["-c", _CHECK_BACKEND], "the GET routes of backend/main.py",
                                own=written))
             if problem:
@@ -530,9 +594,12 @@ def execute(payload: DapTaskPayload) -> DapTaskOutput:
     first = prompts.build_messages(payload)
     messages = first
     prompt_tokens = completion_tokens = duration_ms = 0
-    problem = ""
+    problem = previous = ""
+    repeated = False
     for round_number in range(1 + FIX_ROUNDS):
-        answer = chat(messages, json_mode=False)  # plain text blocks; RuntimeError: model down
+        # plain text blocks; RuntimeError: model down
+        answer = (chat(messages, json_mode=False, temperature=REPEAT_TEMPERATURE) if repeated
+                  else chat(messages, json_mode=False))
         prompt_tokens += answer.prompt_tokens
         completion_tokens += answer.completion_tokens
         duration_ms += answer.duration_ms
@@ -557,10 +624,16 @@ def execute(payload: DapTaskPayload) -> DapTaskOutput:
             return output
         logger.warning("Task %s, answer %d: %s (answer kept in %s)", payload.title,
                        round_number + 1, problem, _keep_rejected(payload, round_number, answer.text))
+        repeated = answer.text.strip() == previous
+        previous = answer.text.strip()
+        cause = hint(problem)
+        same = ("\nYour answer was exactly the same as your previous one, so the problem is "
+                "still there: change the failing line." if repeated else "")
         # Only the last answer goes back, so the conversation does not grow every round.
         messages = [*first, {"role": "assistant", "content": answer.text}, {
             "role": "user",
-            "content": f"Your files have this problem:\n{problem}\n\nFix it. You may change "
+            "content": f"Your files have this problem:\n{problem}\n"
+                       f"{cause + chr(10) if cause else ''}{same}\nFix it. You may change "
                        f"only {', '.join(payload.target_files)}. Answer again with the "
                        "complete corrected files, in the same format: the SUMMARY line and "
                        "one FILE block per path, no Markdown fences.",
@@ -778,20 +851,9 @@ app.mount("/", StaticFiles(directory=Path(__file__).resolve().parent.parent / "f
 ''',
     "tests/test_app.py": '''"""Tests of the generated backend (mock output). Run from the app folder: python -m pytest"""
 
-import sys
-from pathlib import Path
+from fastapi.testclient import TestClient
 
-import tempfile
-
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-
-from fastapi.testclient import TestClient  # noqa: E402
-
-from backend import db  # noqa: E402
-
-db.DB_PATH = Path(tempfile.mkdtemp()) / "test.db"
-
-from backend.main import app  # noqa: E402
+from backend.main import app  # tests/conftest.py has already pointed it at a test database
 
 client = TestClient(app)
 

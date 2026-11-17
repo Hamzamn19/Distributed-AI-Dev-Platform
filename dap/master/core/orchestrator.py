@@ -23,7 +23,9 @@ For one run:
 - Integrating: when all tasks completed, the master runs its acceptance check
   (acceptance.py) on workspace/<project_id>/; an application that does not even
   start fails the project. The result is acceptance.json in the project folder.
-Reassigning failed tasks is Sprint 4; attempt and the stored error stay for it.
+- A new run ("Run again" in the UI) sends the failed tasks again, to their agent
+  (or a replacement, as above); attempt counts the tries, the old error stays stored.
+Choosing another agent for a failed task within one run is Sprint 4.
 """
 
 import logging
@@ -123,9 +125,10 @@ def run_project(project_id: str, *, client=a2a_client, poll_interval: float | No
         project_id=project_id, run_id=str(uuid.uuid4()),
         requirement_text=project.requirement_text, token=settings.agent_token, client=client,
         timeout=settings.task_timeout_sec if task_timeout is None else task_timeout,
-        # in_progress here means a run that stopped half way: send those tasks again.
-        waiting={t.id: t for t in tasks if t.status in
-                 (TaskStatus.PENDING, TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS)},
+        # in_progress here means a run that stopped half way, failed one that failed in an
+        # earlier run: send those tasks again.
+        waiting={t.id: t for t in tasks if t.status in (TaskStatus.PENDING, TaskStatus.ASSIGNED,
+                                                       TaskStatus.IN_PROGRESS, TaskStatus.FAILED)},
         status={t.id: t.status for t in tasks},
     )
     for task_id, task in run.waiting.items():
