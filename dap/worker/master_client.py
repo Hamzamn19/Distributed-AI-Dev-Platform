@@ -6,6 +6,7 @@ Owner: Eray. Paths are relative to /api/v1 (docs/contracts/PROJECT_CONTRACT.md):
     POST /agents/{id}/heartbeat        Heartbeat     -> {"ok": true}, 404 when unknown
     GET  /agents/{id}/tasks/next                     -> 200 Task, 204 when none, 404 when unknown
     POST /tasks/{id}/result            TaskResult    -> Task
+    GET  /tasks/{id}/inputs                          -> files of the tasks in depends_on (Sprint 3)
     GET  /projects/{id}                              -> Project (requirement text for the prompt)
 
 The address and the token come from dap/worker/config.py (.env), never from code.
@@ -13,7 +14,9 @@ The address and the token come from dap/worker/config.py (.env), never from code
 
 import httpx
 
-from dap.shared.schemas import Agent, AgentRegister, Heartbeat, Project, Task, TaskResult
+from dap.shared.schemas import (
+    Agent, AgentRegister, GeneratedFile, Heartbeat, Project, Task, TaskResult,
+)
 
 TIMEOUT_SEC = 30
 
@@ -78,6 +81,14 @@ class MasterClient:
             raise AgentNotRegistered(agent_id)
         _check(response)
         return Task.model_validate(response.json())
+
+    def get_inputs(self, task_id: str) -> list[GeneratedFile]:
+        """Files written by the tasks this task depends on (contract 12.2); [] on 404."""
+        response = self._http.get(self._url(f"/tasks/{task_id}/inputs"), headers=self._headers)
+        if response.status_code == 404:
+            return []
+        _check(response)
+        return [GeneratedFile.model_validate(item) for item in response.json()]
 
     def get_project(self, project_id: str) -> Project | None:
         response = self._http.get(self._url(f"/projects/{project_id}"))

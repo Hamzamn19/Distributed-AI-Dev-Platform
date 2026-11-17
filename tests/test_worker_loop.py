@@ -177,32 +177,101 @@ def test_model_down_gives_a_failed_result(monkeypatch):
     assert not result.success and "11434" in result.error
 
 
-def test_parse_answer_accepts_wrapped_json_and_drops_bad_paths():
-    text = "Here you go:\n" + json.dumps({"summary": "ok", "files": [
-        {"path": "./app/main.py", "content": "a"},
-        {"path": "../escape.py", "content": "b"},
-        {"path": "/etc/passwd", "content": "c"},
-        {"path": "APP/MAIN.PY", "content": "duplicate"},
-        {"path": "notes.md"},
-    ]})
-    summary, files = executor.parse_answer(text)
+def test_parse_answer_takes_the_content_shape():
+    text = "Here you go:\n" + json.dumps({"summary": "ok", "content": "x = 1\n"})
+    summary, file = executor.parse_answer(text, "backend/database.py")
     assert summary == "ok"
-    assert [f.path for f in files] == ["app/main.py"]
+    assert (file.path, file.content) == ("backend/database.py", "x = 1\n")
 
 
-def test_parse_answer_rejects_no_files():
-    with pytest.raises(executor.UnusableAnswer):
-        executor.parse_answer('{"summary": "nothing", "files": []}')
-    with pytest.raises(executor.UnusableAnswer):
-        executor.parse_answer("no json here")
-
-
-def test_files_go_under_the_task_type_folder():
+def test_parse_answer_keeps_only_the_target_file():
+    # Sprint 2 shape: the target is found by path or by file name; the rest is dropped.
     text = json.dumps({"summary": "ok", "files": [
-        {"path": "main.py", "content": "a"}, {"path": "backend/app.py", "content": "b"},
+        {"path": "requirements.txt", "content": "fastapi"},
+        {"path": "database.py", "content": "tables"},
     ]})
-    _, files = executor.parse_answer(text, "backend")
-    assert [f.path for f in files] == ["backend/main.py", "backend/app.py"]
+    _, file = executor.parse_answer(text, "backend/database.py")
+    assert (file.path, file.content) == ("backend/database.py", "tables")
+
+
+def test_parse_answer_drops_a_code_fence():
+    text = json.dumps({"content": "```python\nx = 1\n```"})
+    assert executor.parse_answer(text, "backend/main.py")[1].content == "x = 1"
+
+
+def test_parse_answer_rejects_an_answer_without_the_target():
+    with pytest.raises(executor.UnusableAnswer):
+        executor.parse_answer('{"summary": "x", "files": [{"path": "a.md", "content": "x"}]}',
+                              "backend/main.py")
+    with pytest.raises(executor.UnusableAnswer):
+        executor.parse_answer('{"content": "   "}', "backend/main.py")
+    with pytest.raises(executor.UnusableAnswer):
+        executor.parse_answer("no json here", "backend/main.py")
+
+
+@pytest.mark.parametrize("task_type,target", [
+    (TaskType.DATABASE, "backend/database.py"),
+    (TaskType.BACKEND, "backend/main.py"),
+    (TaskType.FRONTEND, "frontend/index.html"),
+    (TaskType.TESTING, "tests/test_app.py"),
+])
+def test_every_task_type_fills_its_template_file(monkeypatch, _isolated, task_type, target):
+    """Contract 12.2: each type writes exactly its own file and the master accepts it."""
+    monkeypatch.setattr(executor, "chat", _fake_chat([json.dumps({"summary": "ok", "content": "filled\n"})]))
+    project = repositories.create_project(ProjectCreate(
+        name="Types", requirement_text="Members keep a list of the things they own.",
+    ))
+    repositories.create_tasks(project.id, [TaskCreate(
+        id="t-1", title="Fill it", description="Records: things.", type=task_type, depends_on=[],
+    )])
+    worker = _worker()
+    worker.register()
+
+    task = worker.poll_once()
+
+    assert task.status == TaskStatus.COMPLETED
+    assert (_isolated / project.id / target).read_text() == "filled\n"
+
+
+def test_prompt_has_the_template_and_the_dependency_files(monkeypatch, _isolated):
+    calls = []
+    answers = [json.dumps({"summary": "db", "content": "def init_db(): pass\n"}),
+               json.dumps({"summary": "api", "content": "app = 1\n"})]
+    monkeypatch.setattr(executor, "chat", _fake_chat(answers, calls))
+    project = repositories.create_project(ProjectCreate(
+        name="Deps", requirement_text="Members keep a list of the things they own.",
+    ))
+    repositories.create_tasks(project.id, [
+        TaskCreate(id="t-db", title="Tables", description="Records: things.",
+                   type=TaskType.DATABASE, depends_on=[]),
+        TaskCreate(id="t-api", title="API", description="Records: things.",
+                   type=TaskType.BACKEND, depends_on=["t-db"]),
+    ])
+    worker = _worker()
+    worker.register()
+
+    assert worker.poll_once().id == "t-db"
+    assert worker.poll_once().id == "t-api"
+
+    database_prompt, backend_prompt = calls[0][1]["content"], calls[1][1]["content"]
+    assert "Target file: backend/database.py" in database_prompt
+    assert "DATABASE TASK FILE" in database_prompt  # template header of the target file
+    assert "Target file: backend/main.py" in backend_prompt
+    assert "File backend/database.py" in backend_prompt  # from GET /tasks/{id}/inputs
+    assert "def init_db(): pass" in backend_prompt
+
+
+def test_a_refused_file_does_not_leave_the_task_stuck(monkeypatch):
+    """A 422 from the master becomes a failure, so the task is requeued, not stuck."""
+    monkeypatch.setattr(executor, "TARGET_FILE", {**executor.TARGET_FILE, "backend": "wrong/path.py"})
+    monkeypatch.setattr(executor, "chat", _fake_chat([json.dumps({"content": "x"})]))
+    _seed_task()
+    worker = _worker()
+    worker.register()
+
+    task = worker.poll_once()
+
+    assert task.status == TaskStatus.PENDING and task.attempt == 1
 
 
 def test_a_later_task_overwrites_the_same_file_in_the_project_folder(monkeypatch, _isolated):
@@ -229,3 +298,112 @@ def test_a_later_task_overwrites_the_same_file_in_the_project_folder(monkeypatch
     # Contract 12.1: files are written over each other, there is no clash any more.
     assert second.status == TaskStatus.COMPLETED
     assert (_isolated / project.id / "backend" / "main.py").read_text() == "second"
+
+
+# ------------------------------------------------------------------ issue #68
+
+
+def test_broken_python_is_asked_again_with_the_reason(monkeypatch):
+    calls = []
+    answers = [json.dumps({"summary": "cut", "content": "def init_db(:\n"}),
+               json.dumps({"summary": "ok", "content": "def init_db():\n    pass\n"})]
+    monkeypatch.setattr(executor, "chat", _fake_chat(answers, calls))
+    _seed_task("t-py")
+    task = repositories.get_task("t-py")
+
+    result = executor.execute_task(task, "agent-test")
+
+    assert result.success and result.files[0].content.startswith("def init_db():")
+    assert len(calls) == 2
+    retry = calls[1]
+    assert retry[-2]["role"] == "assistant"  # the model sees its own rejected answer
+    assert "invalid Python in backend/main.py" in retry[-1]["content"]
+
+
+def test_broken_python_twice_is_a_failure_not_a_success(monkeypatch):
+    broken = json.dumps({"summary": "cut", "content": "class Item(:\n"})
+    monkeypatch.setattr(executor, "chat", _fake_chat([broken, broken]))
+    _seed_task("t-py2")
+
+    result = executor.execute_task(repositories.get_task("t-py2"), "agent-test")
+
+    assert not result.success and result.files == []
+    assert "invalid Python" in result.error
+
+
+def test_unchanged_template_is_a_failure_not_a_success(monkeypatch):
+    original = executor.template_text("backend/main.py")
+    assert original, "the template must have backend/main.py"
+    unchanged = json.dumps({"summary": "done", "content": original})
+    monkeypatch.setattr(executor, "chat", _fake_chat([unchanged, unchanged]))
+    _seed_task("t-same")
+
+    result = executor.execute_task(repositories.get_task("t-same"), "agent-test")
+
+    assert not result.success
+    assert "unchanged template example" in result.error
+
+
+def test_html_is_not_checked_as_python(monkeypatch):
+    monkeypatch.setattr(executor, "chat", _fake_chat([json.dumps({"content": "<p>def (</p>"})]))
+    project = repositories.create_project(ProjectCreate(
+        name="Html", requirement_text="Members keep a list of the things they own.",
+    ))
+    repositories.create_tasks(project.id, [TaskCreate(
+        id="t-html", title="Page", description="Records: things.", type=TaskType.FRONTEND, depends_on=[],
+    )])
+    assert executor.execute_task(repositories.get_task("t-html"), "agent-test").success
+
+
+# ------------------------------------------------- missing inputs (PR #65 review)
+
+
+def _two_tasks(monkeypatch, calls):
+    answers = [json.dumps({"summary": "db", "content": "def init_db():\n    pass\n"}),
+               json.dumps({"summary": "api", "content": "app = 1\n"})]
+    monkeypatch.setattr(executor, "chat", _fake_chat(answers, calls))
+    project = repositories.create_project(ProjectCreate(
+        name="Deps", requirement_text="Members keep a list of the things they own.",
+    ))
+    repositories.create_tasks(project.id, [
+        TaskCreate(id="t-db", title="Tables", description="Records: things.",
+                   type=TaskType.DATABASE, depends_on=[]),
+        TaskCreate(id="t-api", title="API", description="Records: things.",
+                   type=TaskType.BACKEND, depends_on=["t-db"]),
+    ])
+    worker = _worker()
+    worker.register()
+    assert worker.poll_once().id == "t-db"
+    return worker
+
+
+def test_task_waits_when_the_inputs_cannot_be_fetched(monkeypatch):
+    from dap.worker.master_client import MasterError
+
+    calls = []
+    worker = _two_tasks(monkeypatch, calls)
+    real_get_inputs = worker.client.get_inputs
+
+    def down(task_id):
+        raise MasterError(503, "master busy")
+    monkeypatch.setattr(worker.client, "get_inputs", down)
+
+    assert worker.poll_once() is None  # not run with missing context
+    assert len(calls) == 1  # the model was not asked for t-api
+    assert repositories.get_task("t-api").status == TaskStatus.ASSIGNED  # still ours
+    assert repositories.get_agent("agent-test").status == AgentStatus.IDLE
+
+    monkeypatch.setattr(worker.client, "get_inputs", real_get_inputs)
+    task = worker.poll_once()  # the next poll runs it with the files
+    assert task.id == "t-api" and task.status == TaskStatus.COMPLETED
+    assert "File backend/database.py" in calls[1][1]["content"]
+
+
+def test_task_with_dependencies_waits_for_their_files(monkeypatch):
+    calls = []
+    worker = _two_tasks(monkeypatch, calls)
+    monkeypatch.setattr(worker.client, "get_inputs", lambda task_id: [])
+
+    assert worker.poll_once() is None
+    assert len(calls) == 1
+    assert repositories.get_task("t-api").status == TaskStatus.ASSIGNED
