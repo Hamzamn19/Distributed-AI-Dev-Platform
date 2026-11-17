@@ -381,7 +381,7 @@ writes the titles and descriptions); each task fills fixed files:
 | --- | --- | --- |
 | `database` | `backend/database.py` | - |
 | `backend` | `backend/main.py` | database |
-| `frontend` | `frontend/index.html`, `frontend/app.js` | backend |
+| `frontend` | `frontend/index.html` (the HTML and its JavaScript in one file) | backend |
 | `testing` | `tests/test_app.py` | backend, frontend |
 | (integrator) | `README.md`, `requirements.txt`, `.gitignore`, and the ready helpers `backend/db.py`, `frontend/lib.js`, `frontend/style.css` (no agent writes them) | - |
 
@@ -390,10 +390,20 @@ from the requirement and the task descriptions, so the instructor can choose any
 application. Before a worker returns its files it checks what the next agents rely
 on (`dap/worker/executor.py`, `verify()`): `init_db()` runs twice, every table has
 its `list_/get_/add_/update_/delete_` functions, `main.py` calls only defined
-database functions and its GET routes answer, `app.js` calls only existing routes
+database functions and its GET routes answer, the page calls only existing routes
 and element ids, and the generated tests run. A problem goes back to the model
 (at most two corrections); some failing generated tests are accepted after the
 last one, with the count in the task summary.
+
+When every task is completed, the master runs its acceptance check
+(`dap/master/core/acceptance.py`, no model): it loads a copy of the application
+and tries `GET /`, `GET /api/stats` and, for every `/api/<things>` route (and every
+record of the decomposer's list), list, search, create (a body made from
+`/openapi.json`), get, update, delete and get again (404). A 400 answer is a rule
+saying no, not a failure. The result is `acceptance.json` in the project folder,
+with its own commit (`master: acceptance check (...)`); an application that does not
+start fails the project. So the testing task tests only what the requirement says:
+one create-and-list test per record type, then its business rules and actions.
 
 A worker may only write the files of its task (`target_files`). The files of a
 project go to `workspace/<project_id>/`, a git repository with one commit per

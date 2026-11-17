@@ -16,7 +16,7 @@ from dap.worker.executor import MOCK_FILES
 
 TEMPLATE_FILES = [
     ".gitignore", "README.md", "backend/database.py", "backend/db.py", "backend/main.py",
-    "frontend/app.js", "frontend/index.html", "frontend/lib.js", "frontend/style.css",
+    "frontend/index.html", "frontend/lib.js", "frontend/style.css",
     "requirements.txt", "tests/test_app.py",
 ]
 

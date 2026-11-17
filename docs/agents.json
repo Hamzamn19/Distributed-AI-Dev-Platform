@@ -40,9 +40,9 @@
     "name": "Okan-PC",
     "owner": "Okan",
     "role_hint": "integration",
-    "model": "qwen2.5:7b",
+    "model": "qwen2.5-coder:7b-instruct-q3_K_M",
     "provider": "ollama",
-    "capabilities": {"coding": 60, "reasoning": 60, "context": 50}
+    "capabilities": {"coding": 100, "reasoning": 50, "context": 100}
   },
   {
     "agent_id": "agent-hamza",

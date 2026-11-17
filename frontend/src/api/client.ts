@@ -2,7 +2,16 @@
 // The UI is served by the master itself (http://<master>:8000), so the API base is
 // relative: "/api/v1". During development Vite proxies /api to the master (vite.config.js).
 // Set VITE_API_BASE_URL only for unusual setups (for example "http://100.x.y.z:8000").
-import type { Agent, AgentCard, Project, ProjectCreate, Task, TaskResult } from "./types";
+import { ACCEPTANCE_FILE, type AcceptanceReport } from "./acceptance";
+import type {
+  Agent,
+  AgentCard,
+  HealthResponse,
+  Project,
+  ProjectCreate,
+  Task,
+  TaskResult,
+} from "./types";
 
 const BASE_URL = `${import.meta.env.VITE_API_BASE_URL || ""}/api/v1`;
 
@@ -41,6 +50,10 @@ async function send(path: string, init?: RequestInit): Promise<Response> {
 
 export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return (await send(path, init)).json() as Promise<T>;
+}
+
+export function getHealth(): Promise<HealthResponse> {
+  return request<HealthResponse>("/health");
 }
 
 export function getAgents(): Promise<Agent[]> {
@@ -88,6 +101,15 @@ export function getFiles(id: string): Promise<string[]> {
 export async function getFile(id: string, path: string): Promise<string> {
   const encoded = path.split("/").map(encodeURIComponent).join("/");
   return (await send(`/projects/${id}/files/${encoded}`)).text();
+}
+
+// The master's acceptance check of the generated app, once it has run (else null).
+export async function getAcceptance(id: string): Promise<AcceptanceReport | null> {
+  try {
+    return JSON.parse(await getFile(id, ACCEPTANCE_FILE)) as AcceptanceReport;
+  } catch {
+    return null;
+  }
 }
 
 // The master asks the worker for its A2A agent card: success means the master

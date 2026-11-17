@@ -21,7 +21,12 @@ Owner: Baran. Settings come from `.env` through `config.py`.
   stores the results and commits each task's files into `workspace/<project_id>/`
   (`core/integrator.py`). `GET /results`, `GET /files`, `GET /files/{path}` show them.
   `GET /agents/{id}/card` shows whether the master reaches a worker's A2A server.
+- After the last task `core/acceptance.py` loads a copy of the generated application and
+  tries its routes (list, create, get, update, delete per record); the result is
+  `workspace/<project_id>/acceptance.json` (read it with `GET /files/acceptance.json`).
+  An application that does not start fails the project.
 - `cli.py`: `python -m dap.master.cli agents` / `project <file or text>`;
   needs `MASTER_URL` in `.env`.
 - Tests: `tests/test_agents.py`, `test_projects.py`, `test_decomposer.py`,
-  `test_selector.py`, `test_cli.py`, `test_frontend.py`, `test_orchestrator.py`.
+  `test_selector.py`, `test_cli.py`, `test_frontend.py`, `test_orchestrator.py`,
+  `test_acceptance.py`.

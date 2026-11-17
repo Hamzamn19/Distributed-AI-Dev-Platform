@@ -1,15 +1,26 @@
-// Task type label (frontend, backend, database, testing, ...).
-const COLORS: Record<string, string> = {
-  frontend: "bg-pink-100 text-pink-700",
-  backend: "bg-indigo-100 text-indigo-700",
-  database: "bg-sky-100 text-sky-700",
-  testing: "bg-teal-100 text-teal-700",
+// Task type (database, backend, frontend, testing), one colour per layer of the app.
+export const TYPE_COLOR: Record<string, string> = {
+  database: "var(--t-database)",
+  backend: "var(--t-backend)",
+  frontend: "var(--t-frontend)",
+  testing: "var(--t-testing)",
+};
+
+export const TYPE_HINT: Record<string, string> = {
+  database: "Tables and storage functions (backend/database.py)",
+  backend: "API routes (backend/main.py)",
+  frontend: "The web page (frontend/index.html)",
+  testing: "Tests of the business rules (tests/test_app.py)",
 };
 
 export default function TypeBadge({ value }: { value: string }) {
-  const color = COLORS[value] ?? "bg-slate-100 text-slate-600";
+  const color = TYPE_COLOR[value] ?? "var(--muted)";
   return (
-    <span className={`inline-block rounded-md px-2 py-1 text-xs font-semibold uppercase ${color}`}>
+    <span
+      title={TYPE_HINT[value]}
+      className="inline-block rounded-md border px-2 py-0.5 text-xs font-medium capitalize"
+      style={{ color, borderColor: `color-mix(in srgb, ${color} 35%, transparent)` }}
+    >
       {value.replace("_", " ")}
     </span>
   );

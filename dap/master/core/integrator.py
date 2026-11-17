@@ -5,6 +5,8 @@ Owner: Baran - Sprint 3 (contract section 12).
     prepare(project_id)                         copy the template, git init (first use)
     commit_task(project_id, task, agent_id, files)
         write the task's files, commit "<type>: <title> (by <agent_id>)"
+    commit_master_file(project_id, path, content, message)
+        a file the master writes itself (acceptance.json), with its own commit
     list_files(project_id) -> list[str]         relative paths, without .git
     read_file(project_id, path) -> str          ValueError for a path outside the folder
 
@@ -32,7 +34,7 @@ TEMPLATE_DIR = REPO_ROOT / "templates" / "webapp"
 TEMPLATE_FILES: dict[TaskType, list[str]] = {
     TaskType.DATABASE: ["backend/database.py"],
     TaskType.BACKEND: ["backend/main.py"],
-    TaskType.FRONTEND: ["frontend/index.html", "frontend/app.js"],
+    TaskType.FRONTEND: ["frontend/index.html"],
     TaskType.TESTING: ["tests/test_app.py"],
 }
 
@@ -90,6 +92,16 @@ def commit_task(project_id: str, task: Task, agent_id: str, files: list[Generate
         if _git(folder, "add", "--all"):
             _git(folder, "commit", "--quiet", "--allow-empty", "-m",
                  f"{task.type.value}: {task.title} (by {agent_id})")
+
+
+def commit_master_file(project_id: str, path: str, content: str, message: str) -> None:
+    """Write one file of the master's own (acceptance.json) and commit it."""
+    folder = prepare(project_id)
+    with _lock:
+        target = _target(folder, path)
+        target.write_text(content, encoding="utf-8", newline="\n")
+        if _git(folder, "add", "--", path):
+            _git(folder, "commit", "--quiet", "-m", message)
 
 
 def list_files(project_id: str) -> list[str]:

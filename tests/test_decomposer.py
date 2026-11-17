@@ -112,3 +112,21 @@ def test_order_and_dependencies_are_fixed_whatever_the_model_answers(monkeypatch
     assert tasks[2].depends_on == [ids["backend"]]
     assert tasks[3].depends_on == [ids["backend"], ids["frontend"]]
     assert tasks[3].title == "Library tests"
+
+
+def test_every_description_names_all_records(monkeypatch):
+    # Round 3e: a small model gave each task a different record; the list keeps them together.
+    text = json.dumps({"records": ["team_members", "projects", "tasks"],
+                       "tasks": decomposer.FALLBACK_TASKS})
+    monkeypatch.setattr(decomposer, "chat", lambda *a, **k: _answer(text))
+    tasks = decomposer.decompose(REQUIREMENT)
+    for task in tasks:
+        assert task.description.endswith(
+            "\nRecords: team_members, projects, tasks. This task covers all of them.")
+
+
+def test_descriptions_stay_as_they_are_without_records(monkeypatch):
+    text = json.dumps({"tasks": decomposer.FALLBACK_TASKS})
+    monkeypatch.setattr(decomposer, "chat", lambda *a, **k: _answer(text))
+    tasks = decomposer.decompose(REQUIREMENT)
+    assert "Records:" not in " ".join(t.description for t in tasks)

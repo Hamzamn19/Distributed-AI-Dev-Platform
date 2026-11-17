@@ -67,5 +67,5 @@ Same values as `docs/agents.json`. "estimate" means the scores were not measured
 | agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | measured | Eray-PC | 2026-10-21 |
 | agent-can | qwen2.5-coder:7b | 100 | 50 | 100 | measured (same model as agent-eray) | Eray-PC | 2026-10-21 |
 | agent-abdurrahman | qwen3:4b | 50 | 50 | 50 | estimate |  |  |
-| agent-okan | qwen2.5:7b | 60 | 60 | 50 | estimate |  |  |
+| agent-okan | qwen2.5-coder:7b-instruct-q3_K_M | 100 | 50 | 100 | measured | Okan-PC | 2026-10-29 |
 | agent-hamza | gemma-4-26b-a4b-iq2_xxs (llama.cpp) | 50 | 50 | 50 | estimate |  |  |

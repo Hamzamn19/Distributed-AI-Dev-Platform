@@ -4,9 +4,13 @@ Owner: Eray - Sprint 3.
 
 The model gets the requirement, its task, the template file(s) it must fill
 (templates/webapp/ in this repository), the files of the tasks it depends on,
-and the exact answer format:
+and the exact answer format, plain text blocks instead of JSON, so the code is
+written as it is saved (small models break code they must escape inside JSON):
 
-    {"summary": "...", "files": [{"path": "...", "content": "..."}]}
+    SUMMARY: one sentence
+    === FILE: backend/database.py ===
+    ...the whole file...
+    === END FILE ===
 
 The prompts are written for any requirement: the records, fields and rules come
 from the requirement and the task description, never from here.
@@ -43,17 +47,24 @@ GUIDE: dict[TaskType, str] = {
         "and the helpers of lib.js; call only the /api routes of backend/main.py."
     ),
     TaskType.TESTING: (
-        "Write pytest tests with the ready TestClient for every route of backend/main.py: "
-        "create, list, search, get, missing id (404), update, delete, invalid data (422), "
-        "and one test per business rule (400). Use only the routes and fields that "
-        "backend/main.py really has."
+        "Write pytest tests with the ready TestClient. The master already tries list, "
+        "create, get, update and delete of every record itself, so test what only the "
+        "requirement says: one short create-and-list test per record type, then one test "
+        "per business rule (a broken rule answers 400) and per action of the requirement. "
+        "Use only the routes and fields that backend/main.py really has."
     ),
 }
 
+FILE_START = "=== FILE: {path} ==="
+FILE_END = "=== END FILE ==="
+
 ANSWER_FORMAT = (
-    'Answer with JSON only, exactly in this shape:\n'
-    '{"summary": "one sentence about what you wrote", '
-    '"files": [{"path": "<one of the allowed paths>", "content": "<the whole file>"}]}'
+    "Answer in exactly this format, with nothing before or after it:\n"
+    "SUMMARY: one sentence about what you wrote\n"
+    f"{FILE_START.format(path='<one of the allowed paths>')}\n"
+    "<the whole file, exactly as it is saved>\n"
+    f"{FILE_END}\n"
+    "Write one FILE block for every allowed path."
 )
 
 
@@ -70,6 +81,8 @@ def build_messages(payload: DapTaskPayload) -> list[dict]:
         "one web application together. Each agent writes only its own files.\n"
         f"{GUIDE.get(payload.type, 'Write the files of your task.')}\n"
         f"You may write only these files: {allowed}. Write every one of them completely.\n"
+        "The task description is a short summary: your files must cover every record, "
+        "field, rule and action of the whole requirement for your part.\n"
         "Rules for the files:\n"
         "- Start from the template: keep its import lines, the parts it marks as ready or "
         "required (for example the last line of backend/main.py), and follow its comments.\n"
@@ -77,8 +90,10 @@ def build_messages(payload: DapTaskPayload) -> list[dict]:
         "get from the other agents; do not invent other names.\n"
         "- Write complete, working, modern code for the whole requirement: no placeholders, "
         "no TODO, no example code left over.\n"
-        '- "content" is the whole file as plain source code: no Markdown, no ``` fences.\n'
-        "- Do not explain and do not plan in text: answer at once with the JSON.\n"
+        "- Inside a FILE block write plain source code: no Markdown, no ``` fences, no "
+        "JSON, no escaping.\n"
+        "- Do not explain and do not plan in text: answer at once with the SUMMARY line "
+        "and the FILE blocks.\n"
         f"{ANSWER_FORMAT}"
     )
     parts = [

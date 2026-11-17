@@ -6,7 +6,8 @@ Starts the master and two workers (A2A ports 9001 and 9002) as subprocesses,
 with a temporary database and temporary env files, so data/dap.db and your .env
 files are not touched. Then: workers registered -> project from
 docs/sample_requirements/orta.md -> decompose -> assign -> run -> completed ->
-workspace/<project_id>/ has the template files and four commits. Prints
+workspace/<project_id>/ has the template files, four task commits and the master's
+acceptance check (acceptance.json, every check passed). Prints
 E2E PASSED, or E2E FAILED and the step that failed (exit 1). The processes are
 always stopped at the end; their logs are printed when a step fails.
 """
@@ -26,8 +27,8 @@ TOKEN = "e2e-local-token"
 WORKER_PORTS = (9001, 9002)
 REQUIREMENT = REPO / "docs" / "sample_requirements" / "orta.md"
 EXPECTED_FILES = [
-    ".gitignore", "README.md", "backend/database.py", "backend/db.py", "backend/main.py",
-    "frontend/app.js", "frontend/index.html", "frontend/lib.js", "frontend/style.css",
+    ".gitignore", "README.md", "acceptance.json", "backend/database.py", "backend/db.py", "backend/main.py",
+    "frontend/index.html", "frontend/lib.js", "frontend/style.css",
     "requirements.txt", "tests/test_app.py",
 ]
 
@@ -146,9 +147,15 @@ def main() -> int:
         folder = REPO / "workspace" / pid
         log_lines = subprocess.run(["git", "log", "--format=%s"], cwd=folder, capture_output=True,
                                    text=True).stdout.splitlines()
-        if len(log_lines) != 4:
+        if len(log_lines) != 5 or not log_lines[0].startswith("master: acceptance check"):
             raise StepFailed(f"git log in {folder} has {len(log_lines)} commits: {log_lines}")
-        print(f"ok  workspace/{pid}/ has the template files and 4 commits")
+        print(f"ok  workspace/{pid}/ has the template files, 4 task commits and the check")
+
+        report = httpx.get(f"{api}/projects/{pid}/files/acceptance.json").json()
+        if not report["started"] or report["failed"]:
+            raise StepFailed(f"acceptance check: {report['summary']}: "
+                             f"{[c for c in report['checks'] if c['result'] == 'fail']}")
+        print(f"ok  acceptance check: {report['summary']}")
     except StepFailed as exc:
         print(f"E2E FAILED at {exc}")
         for name, process, log in processes:

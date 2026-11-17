@@ -10,7 +10,7 @@ from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker
 
 from dap.master.a2a_client import A2AError
-from dap.master.core import integrator, orchestrator
+from dap.master.core import acceptance, integrator, orchestrator
 from dap.master.db import database, repositories, results
 from dap.master.main import app
 from dap.shared.enums import A2ATaskState, AgentStatus, ProjectStatus, TaskStatus, TaskType
@@ -28,10 +28,15 @@ from dap.shared.schemas import (
     TaskStatusA2A,
 )
 
+REAL_CHECK = acceptance.check
+STARTED = {"started": True, "error": None, "summary": "1 of 1 checks passed", "passed": 1,
+           "failed": 0, "rules": 0, "checks": []}
+
 
 @pytest.fixture
 def db(tmp_path, monkeypatch):
-    """A fresh database and workspace for each test."""
+    """A fresh database and workspace for each test; the acceptance check always passes
+    (the fake files are no application), except where a test puts the real one back."""
     engine = create_engine(f"sqlite:///{(tmp_path / 'run.db').as_posix()}")
 
     @event.listens_for(engine, "connect")
@@ -44,6 +49,7 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setattr(results, "SessionLocal", sessions)
     monkeypatch.setattr(integrator, "WORKSPACE_ROOT", tmp_path / "workspace")
     monkeypatch.setattr(integrator, "TEMPLATE_DIR", tmp_path / "no-template")
+    monkeypatch.setattr(acceptance, "check", lambda pid, records=(): dict(STARTED))
     yield
     engine.dispose()
 
@@ -134,11 +140,22 @@ def test_dependencies_decide_the_order_and_files_are_passed_on(db):
     assert set(statuses(pid).values()) == {TaskStatus.COMPLETED}
     assert repositories.get_project(pid).status == ProjectStatus.COMPLETED
     assert len(results.list_project_results(pid)) == 4
-    assert integrator.read_file(pid, "frontend/app.js") == "frontend by http://a1:9000\n"
+    assert integrator.read_file(pid, "frontend/index.html") == "frontend by http://a1:9000\n"
     log = git_log(pid)
     assert len(log) == 4
     assert log[-1] == "database: database task (by a1)"
     assert all(t.attempt == 1 for t in repositories.list_tasks(pid))
+
+
+def test_an_application_that_does_not_start_fails_the_project(db, monkeypatch):
+    agent("a1"), agent("a2")
+    pid, _ = project(*APP)
+    monkeypatch.setattr(acceptance, "check", REAL_CHECK)  # the fake files cannot start
+    assert orchestrator.run_project(pid, client=FakeA2A(), poll_interval=0) == ProjectStatus.FAILED
+    assert set(statuses(pid).values()) == {TaskStatus.COMPLETED}
+    report = integrator.read_file(pid, acceptance.ACCEPTANCE_FILE)
+    assert '"started": false' in report
+    assert git_log(pid)[0] == "master: acceptance check (the application does not start)"
 
 
 def test_independent_tasks_on_different_agents_run_in_parallel(db):
@@ -307,4 +324,4 @@ def test_a_task_gets_the_files_of_every_earlier_task_in_its_chain(db):
     orchestrator.run_project(pid, client=fake, poll_interval=0)
     testing = [p for _, p in fake.sent if p.type.value == "testing"][0]
     assert sorted(f.path for f in testing.dependency_files) == [
-        "backend/database.py", "backend/main.py", "frontend/app.js", "frontend/index.html"]
+        "backend/database.py", "backend/main.py", "frontend/index.html"]

@@ -12,4 +12,4 @@ The model each agent runs is recorded in `docs/agents.json` (source of truth) an
 | Eray | | | | | | | | | |
 | Fatma | | | | | | | | | |
 | Hamza | Linux | | | | | | llama.cpp (llama-server) | gemma-4-26b-a4b-iq2_xxs (Gemma 4 26B A4B, same model as Baran) | |
-| Okan | Windows 11 Pro | | 15.4 | NVIDIA GeForce RTX 3060 Laptop GPU, 6144 MiB | | Laptop | Ollama 0.20.5 | qwen2.5:7b, qwen3:4b, qwen3:8b, llama3.1:8b | |
+| Okan | Windows 11 Pro | | 15.4 | NVIDIA GeForce RTX 3060 Laptop GPU, 6144 MiB | | Laptop | Ollama 0.20.5 | qwen2.5-coder:7b-instruct-q3_K_M (agent), qwen2.5:7b, qwen3:4b, qwen3:8b, llama3.1:8b | 24.5 (coder q3, 8192 context) |

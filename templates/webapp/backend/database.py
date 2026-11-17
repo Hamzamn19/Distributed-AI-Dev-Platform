@@ -5,7 +5,10 @@ Relied on by: backend/main.py imports this module as `from backend import databa
 
 Rules every agent follows (<thing> is a record name of the requirement, <things> its plural):
 - Keep the import line and the signature of init_db(). Use the ready helpers of
-  backend/db.py (fetch_all, fetch_one, execute, connect); do not write them again.
+  backend/db.py; do not write them again. Each opens its own connection:
+      fetch_all(sql, params=()) -> list[dict]
+      fetch_one(sql, params=()) -> dict | None
+      execute(sql, params=()) -> int        INSERT: the new id; UPDATE/DELETE: changed rows
 - init_db() creates every table with CREATE TABLE IF NOT EXISTS and may run any number
   of times: sample data only when the table is empty (or INSERT OR IGNORE).
   Add 3 to 5 realistic sample records per table, so the app is not empty at first start.
@@ -30,8 +33,10 @@ from backend.db import connect, execute, fetch_all, fetch_one
 
 def init_db() -> None:
     """Create the tables of the application and add sample data to empty tables."""
-    with connect() as connection:
-        pass  # CREATE TABLE IF NOT EXISTS ... for every table, then the sample data
+    # One execute("CREATE TABLE IF NOT EXISTS <things> (...)") per table, then for example:
+    #     if not fetch_one("SELECT id FROM <things> LIMIT 1"):
+    #         execute("INSERT INTO <things> (<field>, ...) VALUES (?, ...)", (<value>, ...))
+    # execute(sql, params) and fetch_*(sql, params) open their own connection: never pass one.
 
 
 # list_<things>, get_<thing>, add_<thing>, update_<thing>, delete_<thing> for every table,

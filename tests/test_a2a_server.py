@@ -201,7 +201,7 @@ def test_prompt_contains_requirement_task_targets_and_dependencies():
     system, user = build_messages(payload)
     assert "backend developer" in system["content"]
     assert "backend/main.py" in system["content"]
-    assert '"files"' in system["content"]
+    assert "=== FILE: <one of the allowed paths> ===" in system["content"]
     assert "A library system" in user["content"]
     assert "def list_items(): ..." in user["content"]
 

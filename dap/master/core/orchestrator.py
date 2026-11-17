@@ -20,6 +20,9 @@ For one run:
   completed task is committed to workspace/<project_id>/ (integrator).
 - Project status: in_progress while running, then integrating, then completed
   (all tasks completed) or failed.
+- Integrating: when all tasks completed, the master runs its acceptance check
+  (acceptance.py) on workspace/<project_id>/; an application that does not even
+  start fails the project. The result is acceptance.json in the project folder.
 Reassigning failed tasks is Sprint 4; attempt and the stored error stay for it.
 """
 
@@ -31,7 +34,7 @@ from dataclasses import dataclass, field
 
 from dap.master import a2a_client
 from dap.master.config import get_settings
-from dap.master.core import integrator, selector
+from dap.master.core import acceptance, integrator, selector
 from dap.master.db import repositories, results
 from dap.shared.enums import (
     A2A_TO_TASK_STATUS,
@@ -150,9 +153,12 @@ def run_project(project_id: str, *, client=a2a_client, poll_interval: float | No
             time.sleep(poll)
 
     repositories.set_project_status(project_id, ProjectStatus.INTEGRATING)
-    final = (ProjectStatus.COMPLETED
-             if all(s == TaskStatus.COMPLETED for s in run.status.values()) and run.status
-             else ProjectStatus.FAILED)
+    done = bool(run.status) and all(s == TaskStatus.COMPLETED for s in run.status.values())
+    if done:
+        report = acceptance.check(project_id, acceptance.expected_records(tasks))
+        results.record_event("acceptance", report["summary"], project_id=project_id)
+        done = report["started"]
+    final = ProjectStatus.COMPLETED if done else ProjectStatus.FAILED
     repositories.set_project_status(project_id, final)
     logger.info("Run %s of project %s finished: %s", run.run_id, project_id, final.value)
     return final

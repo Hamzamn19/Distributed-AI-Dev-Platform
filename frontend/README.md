@@ -46,3 +46,20 @@ status and the agent with its model, and the Agents page shows a working agent a
 The project page lists every result (summary or error, time, tokens) and the generated
 files with a viewer; the Agents page shows each A2A address and whether the master
 reaches it (checked every 10 s).
+
+HUD redesign (dark "command center" look, no new package; Tailwind, CSS and SVG only;
+theme tokens and panel styles in `src/index.css`, building blocks in `src/components/hud.tsx`):
+
+- `/` Command center (`CommandPage.tsx`, replaces the old new-project page): fleet
+  numbers, a map of the master with every agent on an orbit (`AgentMap.tsx`; a busy
+  agent's link carries moving light), a live console made from status changes between
+  polls (`hooks/useEventLog.ts`), the new-mission form and the project list.
+- `/projects/:id`: phase tracker, telemetry (mission time, agent time, tokens, tok/s),
+  the pipeline database → backend → frontend → testing → master acceptance check
+  (`Pipeline.tsx`), a timeline of the tasks (`Timeline.tsx`), the acceptance matrix
+  from `acceptance.json` (`AcceptanceMatrix.tsx`), task reports, a mission log and the
+  file explorer with line numbers (`FileExplorer.tsx`, replaces `ProjectOutput.tsx`).
+- `/agents`: one card per agent with a capability radar, live heartbeat age, current
+  task and A2A reachability.
+- Fonts (Orbitron, Rajdhani, JetBrains Mono) come from Google Fonts; without internet
+  the system fonts are used. Animations stop with `prefers-reduced-motion`.

@@ -4,7 +4,7 @@
 
 Filled by: the BACKEND task.
 Relies on: backend/database.py; call only functions that file really defines.
-Relied on by: frontend/app.js calls these routes; tests/test_app.py tests them.
+Relied on by: frontend/index.html calls these routes; tests/test_app.py tests them.
 
 Rules every agent follows (<thing> is a record name of the requirement, <things> its plural):
 - Keep everything above the line "--- write below this line ---" unchanged and keep the

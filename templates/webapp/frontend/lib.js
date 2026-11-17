@@ -1,4 +1,4 @@
-// Ready helpers of the page, loaded before app.js. Not written by the agents.
+// Ready helpers of the page, loaded before the page's own script. Not written by the agents.
 //   api(path, {method, body})   fetch JSON; shows the error in #message and throws
 //   showMessage(text, kind)     "ok" or "error" in #message
 //   renderTable(id, rows, columns, actions)   a table with row buttons

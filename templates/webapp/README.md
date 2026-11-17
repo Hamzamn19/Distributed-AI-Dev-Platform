@@ -7,7 +7,7 @@ requirement document. `git log` shows which agent wrote which part.
 | --- | --- |
 | `backend/database.py` | database task: SQLite tables and functions |
 | `backend/main.py` | backend task: FastAPI routes under `/api` |
-| `frontend/index.html`, `frontend/app.js` | frontend task: the page |
+| `frontend/index.html` | frontend task: the page, HTML and its JavaScript in one file |
 | `tests/test_app.py` | testing task: pytest tests of the API |
 | `backend/db.py`, `frontend/lib.js`, `frontend/style.css` | ready parts of the template |
 
