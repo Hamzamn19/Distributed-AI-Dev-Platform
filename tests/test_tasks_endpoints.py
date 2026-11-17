@@ -167,6 +167,18 @@ def test_next_returns_the_agents_own_assigned_task_first():
     assert response.json()["id"] == "t-one"
 
 
+def test_next_waits_for_dependencies_of_an_already_assigned_task(tmp_path, monkeypatch):
+    monkeypatch.setattr(tasks_api, "workspace_root", tmp_path)
+    _seed_agent()
+    _seed_agent("worker-b")
+    _seed_project_with([("t-one", []), ("t-two", ["t-one"])])
+    repositories.assign_task("t-one", "worker-b", "picked")
+    repositories.assign_task("t-two", "worker-a", "picked")
+    assert _next("worker-a").status_code == 204
+    assert _result("t-one", _payload("t-one", "worker-b")).status_code == 200
+    assert _next("worker-a").json()["id"] == "t-two"
+
+
 # ---------------------------------------------------------------- result
 
 

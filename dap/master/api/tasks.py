@@ -93,7 +93,8 @@ def next_task(agent_id: str) -> Task | Response:
 
     for project in repositories.list_projects():
         for task in repositories.list_tasks(project.id):
-            if task.status == TaskStatus.ASSIGNED and task.assigned_agent_id == agent_id:
+            if (task.status == TaskStatus.ASSIGNED and task.assigned_agent_id == agent_id
+                    and _dependencies_completed(task)):
                 return task
 
     for project in repositories.list_projects():
