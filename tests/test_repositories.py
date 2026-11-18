@@ -183,6 +183,13 @@ def task_data(task_type=TaskType.DATABASE, depends_on=None):
     )
 
 
+def test_list_tasks_keeps_the_order_of_creation(store, project_data):
+    project = repositories.create_project(project_data)
+    batch = [task_data(task_type) for task_type in
+             (TaskType.DATABASE, TaskType.BACKEND, TaskType.FRONTEND, TaskType.TESTING) * 3]
+    repositories.create_tasks(project.id, batch)
+    assert [task.id for task in repositories.list_tasks(project.id)] == [t.id for t in batch]
+
 def test_project_round_trip_and_status(store, project_data):
     project = repositories.create_project(project_data)
     assert isinstance(project, Project)
@@ -405,3 +412,61 @@ print(json.dumps({
     assert restored["tasks"][1]["assigned_agent_id"] == registration.agent_id
     assert restored["tasks"][1]["assignment_reason"] == "database role matches"
     assert all(task["created_at"].endswith("Z") for task in restored["tasks"])
+
+
+def test_a2a_url_is_stored_and_refreshed(store, registration):
+    assert repositories.upsert_agent(registration).a2a_url is None
+    with_url = registration.model_copy(update={"a2a_url": "http://100.64.0.7:9000"})
+    assert repositories.upsert_agent(with_url).a2a_url == "http://100.64.0.7:9000"
+    assert repositories.get_agent(registration.agent_id).a2a_url == "http://100.64.0.7:9000"
+
+
+def test_set_task_status_and_remote_task_id(store, project_data):
+    project = repositories.create_project(project_data)
+    task = repositories.create_tasks(project.id, [task_data()])[0]
+    changed = repositories.set_task_status(task.id, TaskStatus.IN_PROGRESS, remote_task_id="remote-1")
+    assert changed.status == TaskStatus.IN_PROGRESS
+    assert changed.updated_at >= task.updated_at
+    repositories.set_task_status(task.id, TaskStatus.COMPLETED)
+    with store[1]() as session:
+        from dap.master.db.models import TaskModel
+
+        record = session.get(TaskModel, task.id)
+        assert record.status == TaskStatus.COMPLETED
+        assert record.remote_task_id == "remote-1"  # kept when not given again
+    with pytest.raises(ValueError):
+        repositories.set_task_status("unknown", TaskStatus.FAILED)
+
+
+def test_increment_attempt_counts_executions(store, project_data):
+    project = repositories.create_project(project_data)
+    task = repositories.create_tasks(project.id, [task_data()])[0]
+    assert task.attempt == 0
+    repositories.increment_attempt(task.id)
+    assert repositories.increment_attempt(task.id).attempt == 2
+    with pytest.raises(ValueError):
+        repositories.increment_attempt("unknown")
+
+
+def test_init_db_adds_new_columns_to_an_older_database(tmp_path, monkeypatch):
+    """A data/dap.db from Sprint 2 has no a2a_url / remote_task_id; init_db adds them."""
+    from sqlalchemy import create_engine
+
+    old = create_engine(f"sqlite:///{(tmp_path / 'old.db').as_posix()}")
+    with old.begin() as connection:
+        connection.execute(text(
+            "CREATE TABLE agents (agent_id VARCHAR PRIMARY KEY, name VARCHAR, owner VARCHAR,"
+            " role_hint VARCHAR, model VARCHAR, provider VARCHAR, cap_coding INTEGER,"
+            " cap_reasoning INTEGER, cap_context INTEGER, status VARCHAR,"
+            " current_task_id VARCHAR, registered_at DATETIME, last_heartbeat_at DATETIME)"))
+        connection.execute(text(
+            "INSERT INTO agents (agent_id, name) VALUES ('agent-old', 'Old-PC')"))
+    monkeypatch.setattr(database, "engine", old)
+    database.init_db()
+    columns = {c["name"] for c in inspect(old).get_columns("agents")}
+    assert "a2a_url" in columns
+    assert "remote_task_id" in {c["name"] for c in inspect(old).get_columns("tasks")}
+    with old.connect() as connection:
+        assert connection.scalar(text("SELECT name FROM agents")) == "Old-PC"
+    database.init_db()  # running it again changes nothing
+    old.dispose()

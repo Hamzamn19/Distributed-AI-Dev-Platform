@@ -84,3 +84,31 @@ def test_heartbeat_of_unknown_agent_gives_404():
                            json={"status": "idle"}, headers=_auth())
     assert response.status_code == 404
     assert "detail" in response.json()
+
+
+def test_agent_card_endpoint_reports_whether_the_master_reaches_the_worker(monkeypatch):
+    from dap.master import a2a_client
+    from dap.shared.schemas import AgentCard, AgentInterface
+
+    headers = {"X-Agent-Token": get_settings().agent_token}
+    base = {"name": "W", "owner": "o", "model": "m",
+            "capabilities": {"coding": 1, "reasoning": 1, "context": 1}}
+    client.post("/api/v1/agents/register", headers=headers,
+                json={**base, "agent_id": "card-ok", "a2a_url": "http://w1:9000"})
+    client.post("/api/v1/agents/register", headers=headers,
+                json={**base, "agent_id": "card-none"})
+
+    def fake_card(url):
+        if url == "http://w1:9000":
+            return AgentCard(name="card-ok", description="d", version="0.1.0",
+                             supported_interfaces=[AgentInterface(url=url)])
+        raise a2a_client.A2AError(f"worker at {url} not reachable")
+
+    monkeypatch.setattr(a2a_client, "get_agent_card", fake_card)
+    assert client.get("/api/v1/agents/card-ok/card").json()["name"] == "card-ok"
+    assert client.get("/api/v1/agents/card-none/card").status_code == 404
+    assert client.get("/api/v1/agents/no-such-agent/card").status_code == 404
+    client.post("/api/v1/agents/register", headers=headers,
+                json={**base, "agent_id": "card-down", "a2a_url": "http://w2:9000"})
+    down = client.get("/api/v1/agents/card-down/card")
+    assert down.status_code == 502 and "not reachable" in down.json()["detail"]

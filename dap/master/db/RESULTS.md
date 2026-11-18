@@ -22,9 +22,10 @@ Import helpers from `dap.master.db.results`:
 
 ```python
 record_event(event_type, message, *, project_id=None, task_id=None, agent_id=None) -> str
-store_task_result(data: TaskResult, *, run_id: str, workspace_root: Path) -> TaskResult
+store_task_result(data: TaskResult, *, run_id: str) -> TaskResult
 get_task_result(task_id: str, *, run_id: str) -> TaskResult | None
 list_task_results(task_id: str) -> list[TaskResult]
+list_project_results(project_id: str) -> list[TaskResult]   # Sprint 3
 ```
 
 `record_event()` returns the new event ID; result readers return the existing
@@ -42,8 +43,10 @@ integration work and have not been added here.
 1. Validate nonnegative metrics, task existence and assigned agent.
 2. Accept a new result only while the task is assigned or in_progress.
 3. Flush the result, final task status and event inside one database transaction.
-4. Save UTF-8 files to `<root>/<project_id>/<run_id>/`.
-5. Commit the transaction only after the file helper succeeds.
+4. Reject unsafe or duplicate file paths (`workspace.check_paths`) before storing.
+5. Since Sprint 3 the files are not written here: the master's integrator writes
+   them into `workspace/<project_id>/` (one git repository per project, contract
+   section 12). The result row keeps the complete file contents.
 
 Success produces task status `completed` and event `task_completed`; failure
 produces `failed` and `task_failed`. Event message JSON contains run_id and summary.

@@ -1,25 +1,65 @@
-# Distributed Multi-Agent Software Development Platform
+# Distributed AI Software Development Platform
 
-CM6453 Software Processes term project (Team 2). We build a web platform where a user enters a software requirement and a master agent splits it into tasks, assigns them to LLM agents running on different machines according to their measured strengths, and merges the results into a working web app.
+CM6453 Software Processes term project. A user enters a software requirement in a
+web interface. A **master** agent splits it into tasks, scores the available agents
+by their measured capabilities and assigns each task to the best one. **Worker**
+agents on other PCs run local LLMs (Ollama). Scrum, five two-week sprints.
 
 ## Where things are
-| Folder / file | Purpose |
-|---|---|
-| `docs/PROJECT_PLAN.md` | Goal, architecture, technology plan, roadmap, risks |
-| `docs/sprints/` | One file per sprint: goal, planning notes, review, retrospective, report |
-| `docs/adr/` | Short decision records (what we tried, result, decision) |
-| `docs/hardware.md` | Everyone's machine specs and installed models |
-| `backend/` | FastAPI app, orchestration, database |
-| `frontend/` | React + Vite + Tailwind web UI |
-| `agents/` | Agent Node (worker) code and the benchmark harness |
-| `tests/` | Cross-component and end-to-end tests |
-| `CONTRIBUTING.md` | Branches, commits, pull requests, Definition of Done |
 
-## Team workflow
-Scrum, 5 sprints of 2 weeks. Planning board: Trello (link: TODO). Every change goes through a pull request reviewed by a teammate.
+| Path | Purpose | Owner |
+| --- | --- | --- |
+| `dap/master/` | Master: FastAPI API, decomposer, agent selection, database | Baran, Can (`db/`) |
+| `dap/worker/` | Worker program every agent PC runs | Eray |
+| `dap/shared/` | Shared enums, data models, LLM client | Baran, Eray |
+| `frontend/` | Web interface (React + TypeScript + Vite + Tailwind) | Fatma |
+| `tests/`, `scripts/`, `.github/` | Tests, helper scripts, CI | Abdurrahman |
+| `docs/` | Contract, requirements, setup guide, sample requirements | Okan |
+| `docs/sprints/` | Sprint planning, guides and reports | Hamza |
+
+Start with [`AGENTS.md`](AGENTS.md) and the contract
+[`docs/contracts/PROJECT_CONTRACT.md`](docs/contracts/PROJECT_CONTRACT.md).
 
 ## Getting started
-TODO: filled in by card S1-06 (clone, install, run, test).
 
-## Status
-Sprint 1 (Oct 5 - Oct 18, tentative): foundation and first end-to-end slice.
+Full guide, including Tailscale: [`docs/SETUP.md`](docs/SETUP.md). Short version,
+from the repository root (Windows PowerShell; on macOS/Linux use `cp` and
+`source .venv/bin/activate`):
+
+```powershell
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+copy .env.example .env          # set LLM_MOCK=1 to try it without Ollama
+
+cd frontend
+npm install
+npm run build                   # once, and after every frontend change
+cd ..
+
+python -m dap.master            # then open http://localhost:8000
+```
+
+The master serves the web interface and the API on one address:
+`http://localhost:8000` (UI), `/docs` (API docs), `/api/v1/...` (API). From another PC
+open `http://<master Tailscale IP>:8000`.
+
+A worker (on an agent PC, or a second terminal on the same PC):
+
+```powershell
+python -m dap.worker.main                          # reads .env
+python -m dap.worker.main --env-file .env.worker1  # see .env.worker.example
+```
+
+Checks: `pytest` (no Ollama needed); `python scripts/e2e_local.py` runs the whole
+flow on this PC (master, two workers, mock answers) and prints `E2E PASSED`; on a
+worker PC, `python scripts/check_connection.py` tests the tailnet connection.
+
+How it works: [`docs/architecture.md`](docs/architecture.md). The master sends the
+tasks to the workers over A2A; the generated application appears in
+`workspace/<project_id>/`, one git commit per task.
+
+## Team workflow
+
+Branches `feature/<card-id>-<short-name>`, pull requests into `main`, CI runs `pytest`
+and the frontend build on every pull request. Details: [`CONTRIBUTING.md`](CONTRIBUTING.md).

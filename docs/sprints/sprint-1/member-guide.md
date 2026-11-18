@@ -331,7 +331,7 @@ Folder: `docs/`. No code.
    - Replace `<owner>` in `README.md` and `docs/SETUP.md` with the GitHub user name.
    - Fill the Product Backlog in Trello with the epics of the five sprints.
    - Collect contract change requests; a change goes into
-     `docs/PROJECT_CONTRACT.md` first.
+     `docs/contracts/PROJECT_CONTRACT.md` first.
    - At sprint end, run the six success steps in `planning.md` one by one.
 
 ## Hamza

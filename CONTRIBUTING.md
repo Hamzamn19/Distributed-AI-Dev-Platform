@@ -2,7 +2,7 @@
 
 ## Branches
 - `main` is always working. Nobody pushes to it directly.
-- Create one short-lived branch per Trello card: `feat/s1-14-fastapi-skeleton`, `fix/s2-08-selection-bug`, `docs/s1-06-onboarding`.
+- Create one short-lived branch per Trello card: `feature/<card-id>-<short-name>`, for example `feature/S1-07-worker-register` (same rule as `AGENTS.md`).
 
 ## Commits
 Short, present tense, with the card ID: `S1-14: add health check endpoint`.
@@ -10,7 +10,7 @@ Short, present tense, with the card ID: `S1-14: add health check endpoint`.
 ## Pull requests
 1. Push your branch and open a pull request into `main`. Fill in the template.
 2. One teammate reviews it (your buddy for the card). Review within 2 days.
-3. CI must be green (once S1-09 is done).
+3. CI must be green (`pytest` and the frontend build).
 4. Merge, delete the branch, move the Trello card.
 
 ## Definition of Done (short version)

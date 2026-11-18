@@ -44,6 +44,7 @@ erDiagram
         string current_task_id "nullable; no FK in Sprint 1"
         datetime registered_at
         datetime last_heartbeat_at "nullable"
+        string a2a_url "nullable; Sprint 3"
     }
     projects {
         string id PK "UUID4"
@@ -66,6 +67,7 @@ erDiagram
         integer attempt
         datetime created_at
         datetime updated_at
+        string remote_task_id "nullable; Sprint 3"
     }
 ```
 
@@ -105,9 +107,11 @@ there has been no heartbeat. Already-offline agents are not counted again.
 | `list_projects()` | Projects ordered by creation time and ID |
 | `set_project_status(project_id, status)` | Updates status and `updated_at` |
 | `create_tasks(project_id, tasks)` | Stores one batch atomically; initial status `pending` |
-| `list_tasks(project_id)` | Project tasks ordered by creation time and ID |
+| `list_tasks(project_id)` | Project tasks in the order they were created |
 | `get_task(task_id)` | `Task`, or `None` |
 | `assign_task(task_id, agent_id, reason)` | Sets agent, reason, `assigned` status and `updated_at` |
+| `set_task_status(task_id, status, remote_task_id=None)` | Sets status and `updated_at`; keeps `remote_task_id` when `None` (Sprint 3) |
+| `increment_attempt(task_id)` | Adds one to `attempt` (Sprint 3) |
 
 Writes that require a missing project, task or agent raise `ValueError`.
 Duplicate IDs and database constraint violations raise SQLAlchemy exceptions

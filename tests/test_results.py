@@ -1,4 +1,4 @@
-"""S2-05: real SQLite result/event storage and durable generated files."""
+"""S2-05: real SQLite result/event storage (files are written by the integrator)."""
 
 from datetime import datetime, timezone
 import json
@@ -63,16 +63,14 @@ def counts(store):
         )
 
 
-def test_result_saves_payload_files_status_and_one_event(store, task_result, tmp_path):
-    root = tmp_path / "workspace"
-    saved = results.store_task_result(task_result, run_id="run-1", workspace_root=root)
+def test_result_saves_payload_files_status_and_one_event(store, task_result):
+    saved = results.store_task_result(task_result, run_id="run-1")
     assert saved == task_result
     assert results.get_task_result(saved.task_id, run_id="run-1") == saved
     assert results.get_task_result(saved.task_id, run_id="other") is None
     assert results.list_task_results(saved.task_id) == [saved]
     task = repositories.get_task(saved.task_id)
     assert task.status == TaskStatus.COMPLETED
-    assert (root / task.project_id / "run-1/db/schema.sql").read_text("utf-8") == saved.files[0].content
     assert counts(store) == (1, 1)
     with store[1]() as session:
         history = session.scalar(select(EventModel))
@@ -84,12 +82,12 @@ def test_result_saves_payload_files_status_and_one_event(store, task_result, tmp
 
 def test_delivery_retry_is_idempotent_and_changed_result_is_rejected(store, task_result, tmp_path):
     root = tmp_path / "workspace"
-    results.store_task_result(task_result, run_id="run-1", workspace_root=root)
+    results.store_task_result(task_result, run_id="run-1")
     original_task = repositories.get_task(task_result.task_id)
-    assert results.store_task_result(task_result, run_id="run-1", workspace_root=root) == task_result
+    assert results.store_task_result(task_result, run_id="run-1") == task_result
     with pytest.raises(ValueError, match="different result"):
         results.store_task_result(
-            task_result.model_copy(update={"summary": "Changed"}), run_id="run-1", workspace_root=root
+            task_result.model_copy(update={"summary": "Changed"}), run_id="run-1"
         )
     assert counts(store) == (1, 1)
     assert repositories.get_task(task_result.task_id) == original_task
@@ -97,7 +95,7 @@ def test_delivery_retry_is_idempotent_and_changed_result_is_rejected(store, task
 
 def test_failed_task_result_is_preserved_for_master_retry_decision(store, task_result, tmp_path):
     failed = task_result.model_copy(update={"success": False, "error": "Model failed", "files": []})
-    assert results.store_task_result(failed, run_id="run-1", workspace_root=tmp_path) == failed
+    assert results.store_task_result(failed, run_id="run-1") == failed
     assert repositories.get_task(failed.task_id).status == TaskStatus.FAILED
     assert results.get_task_result(failed.task_id, run_id="run-1").error == "Model failed"
     with store[1]() as session:
@@ -112,46 +110,31 @@ def test_invalid_result_does_not_change_storage(store, task_result, tmp_path, fi
     before = repositories.get_task(task_result.task_id)
     with pytest.raises(ValueError):
         results.store_task_result(
-            task_result.model_copy(update={field: value}), run_id="run-1", workspace_root=tmp_path / "workspace"
+            task_result.model_copy(update={field: value}), run_id="run-1"
         )
     assert counts(store) == (0, 0)
     assert repositories.get_task(task_result.task_id) == before
-    assert not (tmp_path / "workspace").exists()
 
 
 def test_bad_file_path_rolls_back_result_status_and_event(store, task_result, tmp_path):
     before = repositories.get_task(task_result.task_id)
     invalid = task_result.model_copy(update={"files": [GeneratedFile(path="../escape.sql", content="bad")]})
     with pytest.raises(ValueError):
-        results.store_task_result(invalid, run_id="run-1", workspace_root=tmp_path / "workspace")
-    assert counts(store) == (0, 0)
-    assert repositories.get_task(task_result.task_id) == before
-
-
-def test_write_error_does_not_complete_task(store, task_result, tmp_path, monkeypatch):
-    def fail_write(*args, **kwargs):
-        raise OSError("Disk unavailable")
-
-    before = repositories.get_task(task_result.task_id)
-    monkeypatch.setattr(results, "save_generated_files", fail_write)
-    with pytest.raises(OSError, match="Disk unavailable"):
-        results.store_task_result(task_result, run_id="run-1", workspace_root=tmp_path)
+        results.store_task_result(invalid, run_id="run-1")
     assert counts(store) == (0, 0)
     assert repositories.get_task(task_result.task_id) == before
 
 
 def test_new_run_preserves_older_result_and_files(store, task_result, tmp_path):
-    results.store_task_result(task_result, run_id="run-1", workspace_root=tmp_path)
+    results.store_task_result(task_result, run_id="run-1")
     repositories.assign_task(task_result.task_id, task_result.agent_id, "New execution")
     revised = task_result.model_copy(update={
         "files": [GeneratedFile(path="db/schema.sql", content="-- revised schema\n")],
     })
-    results.store_task_result(revised, run_id="run-2", workspace_root=tmp_path)
+    results.store_task_result(revised, run_id="run-2")
     assert results.get_task_result(task_result.task_id, run_id="run-1") == task_result
     assert results.get_task_result(task_result.task_id, run_id="run-2") == revised
     assert len(results.list_task_results(task_result.task_id)) == 2
-    project_id = repositories.get_task(task_result.task_id).project_id
-    assert (tmp_path / project_id / "run-1/db/schema.sql").read_text("utf-8") == task_result.files[0].content
     assert counts(store) == (2, 2)
 
 
@@ -176,7 +159,7 @@ def test_event_context_and_invalid_project_are_checked(store, task_result):
     "UPDATE events SET agent_id = 'unknown'",
 ])
 def test_result_and_event_database_constraints(store, task_result, tmp_path, statement):
-    results.store_task_result(task_result, run_id="run-1", workspace_root=tmp_path)
+    results.store_task_result(task_result, run_id="run-1")
     with pytest.raises(IntegrityError):
         with store[0].begin() as connection:
             connection.execute(text(statement))
@@ -200,7 +183,7 @@ def test_create_all_adds_new_tables_without_losing_existing_records(monkeypatch)
     legacy.dispose()
 
 
-def test_result_events_and_files_survive_separate_processes(tmp_path):
+def test_result_and_events_survive_separate_processes(tmp_path):
     repo_root = Path(__file__).resolve().parent.parent
     environment = os.environ.copy()
     environment["DATABASE_URL"] = f"sqlite:///{(tmp_path / 'restart.db').as_posix()}"
@@ -215,7 +198,7 @@ a=r.upsert_agent(AgentRegister(agent_id='agent-can',name='Can',owner='Can',model
 p=r.create_project(ProjectCreate(name='Library',requirement_text='Build a library application with books.'))
 t=r.create_tasks(p.id,[TaskCreate(id=str(uuid4()),title='Schema',description='Create schema',type=TaskType.DATABASE)])[0]
 r.assign_task(t.id,a.agent_id,'Match')
-results.store_task_result(TaskResult(task_id=t.id,agent_id=a.agent_id,success=True,summary='Done',files=[GeneratedFile(path='db/schema.sql',content='-- durable SQL')],duration_ms=123,tokens_used=45),run_id='run-1',workspace_root=Path(sys.argv[1]))
+results.store_task_result(TaskResult(task_id=t.id,agent_id=a.agent_id,success=True,summary='Done',files=[GeneratedFile(path='db/schema.sql',content='-- durable SQL')],duration_ms=123,tokens_used=45),run_id='run-1')
 print(t.id)
 '''
     root = tmp_path / "workspace"
@@ -229,10 +212,17 @@ from dap.master.db.database import SessionLocal
 from dap.master.db.models import EventModel
 t=r.get_task(sys.argv[1]); result=results.get_task_result(t.id,run_id='run-1')
 with SessionLocal() as session: count=session.scalar(select(func.count()).select_from(EventModel))
-print(json.dumps({'status':t.status.value,'summary':result.summary,'tokens':result.tokens_used,'duration':result.duration_ms,'events':count,'sql':(Path(sys.argv[2])/t.project_id/'run-1/db/schema.sql').read_text('utf-8')}))
+print(json.dumps({'status':t.status.value,'summary':result.summary,'tokens':result.tokens_used,'duration':result.duration_ms,'events':count}))
 '''
     read = subprocess.run([sys.executable, "-c", reader, written.stdout.strip(), str(root)], cwd=repo_root, env=environment, capture_output=True, text=True, check=True, timeout=30)
     assert json.loads(read.stdout) == {
         "status": "completed", "summary": "Done", "tokens": 45,
-        "duration": 123, "events": 1, "sql": "-- durable SQL",
+        "duration": 123, "events": 1,
     }
+
+
+def test_list_project_results_returns_the_results_of_one_project(store, task_result):
+    results.store_task_result(task_result, run_id="run-1")
+    project_id = repositories.get_task(task_result.task_id).project_id
+    assert results.list_project_results(project_id) == [task_result]
+    assert results.list_project_results("other-project") == []

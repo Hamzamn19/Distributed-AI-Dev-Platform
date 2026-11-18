@@ -44,3 +44,52 @@ def test_unreachable_model_raises_runtime_error(monkeypatch):
     with pytest.raises(RuntimeError, match="127.0.0.1:9"):
         llm_client.chat(MESSAGES)
     assert llm_client.health_check() is False
+
+
+def test_timeout_comes_from_llm_timeout_sec(monkeypatch):
+    monkeypatch.delenv("LLM_TIMEOUT_SEC", raising=False)
+    assert llm_client._timeout_sec() == 120
+    monkeypatch.setenv("LLM_TIMEOUT_SEC", "600")
+    assert llm_client._timeout_sec() == 600
+
+
+class _FakeCompletions:
+    def __init__(self):
+        self.kwargs = None
+
+    def create(self, **kwargs):
+        from types import SimpleNamespace
+        self.kwargs = kwargs
+        return SimpleNamespace(
+            choices=[SimpleNamespace(message=SimpleNamespace(content="hi"))],
+            usage=SimpleNamespace(prompt_tokens=1, completion_tokens=1))
+
+
+@pytest.fixture
+def fake_model(monkeypatch):
+    from types import SimpleNamespace
+    monkeypatch.setenv("LLM_MOCK", "0")
+    monkeypatch.setenv("LLM_BASE_URL", "http://model/v1")
+    monkeypatch.setenv("LLM_MODEL", "test-model")
+    completions = _FakeCompletions()
+    monkeypatch.setattr(llm_client, "_client", lambda base_url, api_key: SimpleNamespace(
+        chat=SimpleNamespace(completions=completions)))
+    return completions
+
+
+def test_thinking_is_off_and_answers_are_limited_by_default(fake_model, monkeypatch):
+    monkeypatch.delenv("LLM_THINK", raising=False)
+    monkeypatch.delenv("LLM_MAX_TOKENS", raising=False)
+    llm_client.chat(MESSAGES)
+    assert fake_model.kwargs["extra_body"] == {"chat_template_kwargs": {"enable_thinking": False}}
+    assert fake_model.kwargs["max_tokens"] == 8192
+
+
+def test_llm_think_and_llm_max_tokens_change_the_request(fake_model, monkeypatch):
+    monkeypatch.setenv("LLM_THINK", "1")
+    monkeypatch.setenv("LLM_MAX_TOKENS", "2000")
+    llm_client.chat(MESSAGES)
+    assert "extra_body" not in fake_model.kwargs
+    assert fake_model.kwargs["max_tokens"] == 2000
+    llm_client.chat(MESSAGES, max_tokens=50)
+    assert fake_model.kwargs["max_tokens"] == 50

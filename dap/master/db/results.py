@@ -1,20 +1,20 @@
-"""S2-05 local result/event persistence, ready for Master integration review.
+"""S2-05 result/event persistence, used by the master's orchestrator (Sprint 3).
 
-Uses the unchanged shared TaskResult payload. Master supplies one run ID per
-execution and an explicit workspace root. These additive helper signatures
-must be adopted by the API owner; existing contract functions are unchanged.
+Uses the shared TaskResult payload. The master supplies one run ID per
+execution (one POST /projects/{id}/run). Since Sprint 3 this module stores
+results only; the master's integrator writes the files into
+workspace/<project_id>/ (contract section 12). File paths are still checked here.
 """
 
 from datetime import datetime, timezone
 import json
-from pathlib import Path
 from uuid import NAMESPACE_URL, uuid4, uuid5
 
 from sqlalchemy import select
 
 from dap.master.db.database import SessionLocal, init_db
 from dap.master.db.models import AgentModel, EventModel, ProjectModel, TaskModel, TaskResultModel
-from dap.master.db.workspace import save_generated_files
+from dap.master.db.workspace import check_paths
 from dap.shared.enums import TaskStatus
 from dap.shared.schemas import TaskResult
 
@@ -70,6 +70,17 @@ def get_task_result(task_id: str, *, run_id: str) -> TaskResult | None:
         return _payload(record) if record is not None else None
 
 
+def list_project_results(project_id: str) -> list[TaskResult]:
+    """Every stored result of a project's tasks, oldest first."""
+    with SessionLocal() as session:
+        records = session.scalars(
+            select(TaskResultModel).join(TaskModel, TaskResultModel.task_id == TaskModel.id)
+            .where(TaskModel.project_id == project_id)
+            .order_by(TaskResultModel.created_at, TaskResultModel.id)
+        )
+        return [_payload(record) for record in records]
+
+
 def list_task_results(task_id: str) -> list[TaskResult]:
     with SessionLocal() as session:
         records = session.scalars(
@@ -79,19 +90,19 @@ def list_task_results(task_id: str) -> list[TaskResult]:
         return [_payload(record) for record in records]
 
 
-def store_task_result(data: TaskResult, *, run_id: str, workspace_root: Path) -> TaskResult:
-    """Persist one final result per task/run and its files, status and history.
+def store_task_result(data: TaskResult, *, run_id: str) -> TaskResult:
+    """Persist one final result per task/run, the task's final status and history.
 
     Identical delivery retries are idempotent. Changed results for the same
     task/run are rejected. Task execution retries/reassignment belong to Master.
-    The caller serializes writes to a run. Filesystem and database are not a
-    distributed transaction; a write/commit error must be reported as failure.
+    Unsafe file paths are rejected before anything is stored.
     """
     data = TaskResult.model_validate(data.model_dump())
     if data.duration_ms < 0 or data.tokens_used < 0:
         raise ValueError("Result duration and token count must be nonnegative")
     if not run_id:
         raise ValueError("Run ID must not be empty")
+    check_paths(data.files)
     with SessionLocal.begin() as session:
         task = session.get(TaskModel, data.task_id)
         if task is None:
@@ -102,7 +113,6 @@ def store_task_result(data: TaskResult, *, run_id: str, workspace_root: Path) ->
         if existing is not None:
             if _payload(existing) != data:
                 raise ValueError("A different result already exists for this task/run")
-            save_generated_files(task.project_id, run_id, data.files, workspace_root=workspace_root)
             return _payload(existing)
         if task.status not in (TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS):
             raise ValueError("Task must be assigned or in progress before accepting a result")
@@ -120,5 +130,4 @@ def store_task_result(data: TaskResult, *, run_id: str, workspace_root: Path) ->
             message=json.dumps({"run_id": run_id, "summary": data.summary}), created_at=now,
         ))
         session.flush()
-        save_generated_files(task.project_id, run_id, data.files, workspace_root=workspace_root)
     return data

@@ -1,7 +1,7 @@
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import Layout from "./components/Layout";
 import AgentsPage from "./pages/AgentsPage";
-import NewProjectPage from "./pages/NewProjectPage";
+import OverviewPage from "./pages/OverviewPage";
 import ProjectPage from "./pages/ProjectPage";
 
 export default function App() {
@@ -9,7 +9,7 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route element={<Layout />}>
-          <Route path="/" element={<NewProjectPage />} />
+          <Route path="/" element={<OverviewPage />} />
           <Route path="/projects/:id" element={<ProjectPage />} />
           <Route path="/agents" element={<AgentsPage />} />
         </Route>

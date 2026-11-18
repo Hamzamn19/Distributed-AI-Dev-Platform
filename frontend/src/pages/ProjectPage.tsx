@@ -1,37 +1,124 @@
-import { useCallback, useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
+import { ACCEPTANCE_FILE } from "../api/acceptance";
+import type { AcceptanceReport } from "../api/acceptance";
 import {
   assignProject,
   decomposeProject,
+  getAcceptance,
   getAgents,
+  getFiles,
   getProject,
+  getResults,
   getTasks,
+  runProject,
 } from "../api/client";
-import type { Task } from "../api/types";
+import type { Project, Task, TaskResult } from "../api/types";
+import AcceptanceMatrix from "../components/AcceptanceMatrix";
 import Badge from "../components/Badge";
+import FileExplorer from "../components/FileExplorer";
+import Pipeline from "../components/Pipeline";
+import Timeline from "../components/Timeline";
 import TypeBadge from "../components/TypeBadge";
+import { ActivityList, Card, Stat, fg, soft } from "../components/ui";
+import type { ToneName } from "../components/ui";
+import { useEventLog } from "../hooks/useEventLog";
+import type { Watched } from "../hooks/useEventLog";
+import { useNow } from "../hooks/useNow";
 import { usePolling } from "../hooks/usePolling";
+import { duration, stamp, tokens } from "../lib/format";
+
+type Action = "decompose" | "assign" | "run";
+
+const greeting = () => "Following this project.";
+
+function taskLine(task: Task, agentName: (id: string | null) => string): Watched["told"] {
+  const what = `${task.type[0].toUpperCase()}${task.type.slice(1)} task`;
+  return (before, after) => {
+    if (before === undefined) return null; // the steps above show the current state
+    if (after === "assigned") return { text: `${what} given to ${agentName(task.assigned_agent_id)}.`, tone: "plan" };
+    if (after === "in_progress") return { text: `${what} sent to ${agentName(task.assigned_agent_id)}.`, tone: "warn" };
+    if (after === "completed") return { text: `${what} completed; its files are saved.`, tone: "ok" };
+    if (after === "failed") return { text: `${what} failed.`, tone: "bad" };
+    return { text: `${what}: ${after}.`, tone: "info" };
+  };
+}
+
+// What the user should do (or wait for) now, in plain words.
+function nextStep(project: Project, tasks: Task[], acceptance: AcceptanceReport | null) {
+  const failedTask = tasks.find((t) => t.status === "failed");
+  const running = tasks.some((t) => t.status === "in_progress");
+  const step = (tone: ToneName, title: string, text: string, action?: Action, button?: string) => ({ tone, title, text, action, button });
+
+  if (project.status === "decomposing") return step("plan", "The master is planning", "It reads the requirement and splits it into tasks. This takes a few seconds.");
+  if (tasks.length === 0)
+    return step("info", "Step 1 of 3: plan the work", "The master reads the requirement and splits it into four tasks: database, backend, frontend and testing.", "decompose", "Decompose");
+  if (!tasks.some((t) => t.assigned_agent_id))
+    return step("info", "Step 2 of 3: choose the agents", "The master scores every online agent for every task (its skills, its role and how busy it is) and picks the best one.", "assign", "Assign agents");
+  if (running) {
+    const now = tasks.find((t) => t.status === "in_progress");
+    return step("warn", "Agents are working", `Now: the ${now?.type} task. Tasks run in order, because each one builds on the files of the one before.`);
+  }
+  if (project.status === "integrating") return step("plan", "The master is checking the app", "It starts the generated application and tries every page and route.");
+  if (project.status === "completed")
+    return step(
+      "ok",
+      "Done",
+      acceptance ? `All tasks are completed. Master check: ${acceptance.summary}. The files are below.` : "All tasks are completed. The files are below.",
+    );
+  if (project.status === "failed" || failedTask)
+    return step("bad", "Something failed", failedTask ? `The ${failedTask.type} task failed; open its report below. You can run the project again.` : "Open the task reports below, then run again.", "run", "Run again");
+  return step("info", "Step 3 of 3: run on the agents", "Each task is sent to its agent. The agents write the code; the master saves it and checks the finished app.", "run", "Run on agents");
+}
 
 export default function ProjectPage() {
   const { id = "" } = useParams();
-  const [busy, setBusy] = useState<"decompose" | "assign" | null>(null);
+  const now = useNow();
+  const [busy, setBusy] = useState<Action | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
-    const [project, tasks, agents] = await Promise.all([
+    const [project, tasks, agents, results, files] = await Promise.all([
       getProject(id),
       getTasks(id),
       getAgents(),
+      getResults(id),
+      getFiles(id),
     ]);
-    return { project, tasks, agents };
+    const acceptance = files.includes(ACCEPTANCE_FILE) ? await getAcceptance(id) : null;
+    return { project, tasks, agents, results, files, acceptance };
   }, [id]);
   const { data, error, loading, refresh } = usePolling(load);
 
-  async function run(kind: "decompose" | "assign") {
+  // The newest result of every task (an earlier run may have left an older one).
+  const latest = useMemo(() => {
+    const map = new Map<string, TaskResult>();
+    for (const r of data?.results ?? []) map.set(r.task_id, r);
+    return map;
+  }, [data]);
+
+  const watched = useMemo(() => {
+    if (!data) return null;
+    const agentName = (agentId: string | null) => data.agents.find((a) => a.agent_id === agentId)?.name ?? agentId ?? "an agent";
+    const items: Record<string, Watched> = {};
+    for (const t of data.tasks) items[t.id] = { state: t.status, told: taskLine(t, agentName) };
+    if (data.acceptance) {
+      const failed = data.acceptance.failed;
+      items.acceptance = {
+        state: data.acceptance.summary,
+        told: (_b, after) => ({ text: `Master check: ${after}.`, tone: failed ? "warn" : "ok" }),
+      };
+    }
+    return items;
+  }, [data]);
+  const lines = useEventLog(watched, greeting);
+
+  async function act(kind: Action) {
     setBusy(kind);
     setActionError(null);
+    const action = { decompose: decomposeProject, assign: assignProject, run: runProject }[kind];
     try {
-      await (kind === "decompose" ? decomposeProject(id) : assignProject(id));
+      await action(id);
       await refresh();
     } catch (e) {
       setActionError(e instanceof Error ? e.message : String(e));
@@ -40,153 +127,170 @@ export default function ProjectPage() {
     }
   }
 
-  if (loading) return <p className="text-slate-500">Loading project...</p>;
+  if (loading) return <p className="text-sm text-muted">Loading the project...</p>;
   if (!data) {
     return (
-      <p role="alert" className="text-red-700">
-        Could not load project: {error}{" "}
+      <p role="alert" className="text-sm text-bad">
+        Could not load the project: {error}{" "}
         <Link to="/" className="underline">
-          Back to projects
+          Back to the overview
         </Link>
       </p>
     );
   }
 
-  const { project, tasks, agents } = data;
+  const { project, tasks, agents, files, acceptance } = data;
   const hasTasks = tasks.length > 0;
   const hasAssignments = tasks.some((t) => t.assigned_agent_id);
-
-  const agentName = (agentId: string | null) =>
-    agentId ? (agents.find((a) => a.agent_id === agentId)?.name ?? agentId) : "-";
-  const dependsOn = (task: Task) =>
-    task.depends_on.length
-      ? task.depends_on.map((d) => tasks.find((t) => t.id === d)?.title ?? d).join(", ")
-      : "-";
-
-  const steps = [
-    { label: "Requirement", done: true },
-    { label: "Master", done: hasTasks },
-    { label: "Tasks", done: hasAssignments },
-  ];
+  const running = tasks.some((t) => t.status === "in_progress") || ["decomposing", "integrating"].includes(project.status);
+  const next = nextStep(project, tasks, acceptance);
+  const results = [...latest.values()];
+  const totalTokens = results.reduce((sum, r) => sum + r.tokens_used, 0);
+  const agentTime = results.reduce((sum, r) => sum + r.duration_ms, 0);
+  const settled = project.status === "completed" || project.status === "failed";
+  const elapsed = (settled ? new Date(project.updated_at).getTime() : now) - new Date(project.created_at).getTime();
+  const done = tasks.filter((t) => t.status === "completed").length;
+  const tried = acceptance ? acceptance.passed + acceptance.failed : 0;
+  const labels: Record<Action, string> = { decompose: "Decompose", assign: "Assign agents", run: "Run on agents" };
+  const allowed: Record<Action, boolean> = { decompose: true, assign: hasTasks, run: hasAssignments };
 
   return (
     <>
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <Link to="/" className="text-sm text-violet-700 hover:underline">
-          ← All projects
+      <div>
+        <Link to="/" className="text-sm text-accent hover:underline">
+          ← Overview
         </Link>
         <div className="mt-2 flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-2xl font-bold sm:text-3xl">{project.name}</h2>
-          <Badge value={project.status} />
+          <div className="min-w-0">
+            <h1 className="truncate text-2xl font-semibold text-ink">{project.name}</h1>
+            <p className="text-sm text-muted">Created {stamp(project.created_at)}</p>
+          </div>
+          <Badge value={project.status} large />
         </div>
-        <p className="mt-3 text-slate-600">{project.requirement_text}</p>
+      </div>
 
-        <ol className="mt-6 flex flex-wrap items-center gap-2 text-sm font-medium">
-          {steps.map((step, i) => (
-            <li key={step.label} className="flex items-center gap-2">
-              <span
-                className={`rounded-full px-3 py-1 ${
-                  step.done ? "bg-emerald-100 text-emerald-700" : "bg-slate-100 text-slate-500"
-                }`}
-              >
-                {step.done ? "✓ " : ""}
-                {step.label}
-              </span>
-              {i < steps.length - 1 && <span className="text-slate-400">→</span>}
-            </li>
-          ))}
-        </ol>
-
-        <div className="mt-6 flex flex-wrap gap-3">
-          <button
-            onClick={() => run("decompose")}
-            disabled={busy !== null}
-            className="rounded-xl bg-violet-700 px-5 py-3 font-semibold text-white hover:bg-violet-800 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy === "decompose" ? "Decomposing..." : "Decompose"}
-          </button>
-          <button
-            onClick={() => run("assign")}
-            disabled={busy !== null || !hasTasks}
-            className="rounded-xl border border-violet-700 px-5 py-3 font-semibold text-violet-800 hover:bg-violet-50 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy === "assign" ? "Assigning..." : "Assign agents"}
-          </button>
-        </div>
-        {error && (
-          <p role="alert" className="mt-3 text-amber-700">
-            Could not refresh: {error}
+      <section className="card flex flex-wrap items-center justify-between gap-4 border-l-4 p-4 sm:p-5" style={{ borderLeftColor: fg(next.tone) }}>
+        <div className="min-w-0 max-w-3xl">
+          <p className="text-xs font-medium uppercase tracking-wide" style={{ color: fg(next.tone) }}>
+            Next step
           </p>
-        )}
+          <p className="mt-0.5 text-lg font-semibold text-ink">{next.title}</p>
+          <p className="mt-1 text-sm text-muted">{next.text}</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2">
+          {next.action && (
+            <button onClick={() => act(next.action!)} disabled={busy !== null || running} className="btn btn-primary">
+              {busy === next.action ? "Working..." : next.button}
+            </button>
+          )}
+          <details className="relative">
+            <summary className="btn cursor-pointer list-none">More actions</summary>
+            <div className="card absolute right-0 z-10 mt-1 w-56 space-y-1 p-2">
+              {(["decompose", "assign", "run"] as Action[]).map((a, i) => (
+                <button
+                  key={a}
+                  onClick={() => act(a)}
+                  disabled={busy !== null || running || !allowed[a]}
+                  className="w-full rounded-md px-3 py-2 text-left text-sm text-ink hover:bg-sunken disabled:opacity-40"
+                >
+                  {i + 1}. {labels[a]}
+                </button>
+              ))}
+            </div>
+          </details>
+        </div>
         {actionError && (
-          <p role="alert" className="mt-3 text-red-700">
+          <p role="alert" className="w-full rounded-md px-3 py-2 text-sm" style={{ color: fg("bad"), background: soft("bad") }}>
             {actionError}
           </p>
         )}
+        {error && <p className="w-full text-xs text-warn">Connection problem, retrying: {error}</p>}
       </section>
 
-      <section className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-6">
-        <h2 className="text-2xl font-bold">Task board ({tasks.length})</h2>
-        {!hasTasks ? (
-          <p className="mt-4 text-slate-500">No tasks yet. Press "Decompose".</p>
+      <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
+        <Stat label="Tasks done" value={`${done} / ${tasks.length}`} hint={`${tasks.filter((t) => t.status === "failed").length} failed`} tone={done && done === tasks.length ? "ok" : undefined} />
+        <Stat label="Total time" value={duration(elapsed)} hint={settled ? "from creation to the end" : "since the project was created"} />
+        <Stat label="Agent time" value={duration(agentTime)} hint="time the agents spent, added up" />
+        <Stat label="Tokens" value={tokens(totalTokens)} hint={agentTime ? `${(totalTokens / (agentTime / 1000)).toFixed(1)} tokens per second` : "words the models wrote"} />
+        <Stat
+          label="Master check"
+          value={acceptance ? (acceptance.started ? `${acceptance.passed} / ${tried}` : "Failed") : "–"}
+          hint={acceptance ? "checks passed" : "after the last task"}
+          tone={acceptance ? (acceptance.started && !acceptance.failed ? "ok" : "bad") : undefined}
+        />
+      </div>
+
+      <Card title="Steps" description="Each task is written by one agent, in this order; the master checks the result at the end. Hover a value for details.">
+        {hasTasks ? (
+          <Pipeline tasks={tasks} results={latest} agents={agents} acceptance={acceptance} projectStatus={project.status} />
         ) : (
-          <>
-            {/* Desktop: table */}
-            <div className="mt-4 hidden overflow-x-auto md:block">
-              <table className="w-full text-left text-sm">
-                <thead className="text-slate-500">
-                  <tr>
-                    <th className="py-2 pr-4">Title</th>
-                    <th className="py-2 pr-4">Type</th>
-                    <th className="py-2 pr-4">Status</th>
-                    <th className="py-2 pr-4">Assigned agent</th>
-                    <th className="py-2 pr-4">Reason</th>
-                    <th className="py-2">Depends on</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100">
-                  {tasks.map((task) => (
-                    <tr key={task.id}>
-                      <td className="py-3 pr-4 font-semibold">{task.title}</td>
-                      <td className="py-3 pr-4">
-                        <TypeBadge value={task.type} />
-                      </td>
-                      <td className="py-3 pr-4">
-                        <Badge value={task.status} />
-                      </td>
-                      <td className="py-3 pr-4">{agentName(task.assigned_agent_id)}</td>
-                      <td className="py-3 pr-4">{task.assignment_reason ?? "-"}</td>
-                      <td className="py-3">{dependsOn(task)}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Phone: one card per task */}
-            <div className="mt-4 space-y-3 md:hidden">
-              {tasks.map((task) => (
-                <article key={task.id} className="rounded-xl border border-slate-200 p-4">
-                  <div className="flex items-center justify-between gap-2">
-                    <h3 className="font-semibold">{task.title}</h3>
-                    <TypeBadge value={task.type} />
-                  </div>
-                  <div className="mt-2">
-                    <Badge value={task.status} />
-                  </div>
-                  <p className="mt-2 text-sm text-slate-700">
-                    Agent: {agentName(task.assigned_agent_id)}
-                  </p>
-                  {task.assignment_reason && (
-                    <p className="mt-1 text-sm text-slate-500">{task.assignment_reason}</p>
-                  )}
-                  <p className="mt-1 text-sm text-slate-500">Depends on: {dependsOn(task)}</p>
-                </article>
-              ))}
-            </div>
-          </>
+          <p className="text-sm text-muted">No tasks yet. Press "Decompose" above.</p>
         )}
-      </section>
+      </Card>
+
+      <div className="grid gap-5 xl:grid-cols-2">
+        <Card title="Master check" description="Does the generated app really work? One row per kind of record.">
+          <AcceptanceMatrix report={acceptance} />
+        </Card>
+        <Card title="Timeline" description="When each task ran and how long it took.">
+          <Timeline tasks={tasks} results={latest} agents={agents} now={now} />
+        </Card>
+      </div>
+
+      <div className="grid gap-5 xl:grid-cols-5">
+        <Card title="Task reports" description="What the master asked for, and what the agent answered. Click a task to open it." className="xl:col-span-3">
+          {!hasTasks ? (
+            <p className="text-sm text-muted">Nothing planned yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {tasks.map((task) => {
+                const result = latest.get(task.id);
+                return (
+                  <details key={task.id} className="group rounded-lg border border-line">
+                    <summary className="flex cursor-pointer list-none items-center gap-3 px-3 py-2.5 hover:bg-sunken">
+                      <TypeBadge value={task.type} />
+                      <span className="min-w-0 flex-1 truncate text-sm text-ink">{task.title}</span>
+                      <Badge value={task.status} />
+                      <span className="text-muted transition group-open:rotate-180">▾</span>
+                    </summary>
+                    <div className="space-y-3 border-t border-line px-3 py-3 text-sm">
+                      <div>
+                        <p className="text-xs font-medium text-muted">The master's instructions</p>
+                        <p className="mt-1 whitespace-pre-wrap text-ink">{task.description}</p>
+                      </div>
+                      {result && (
+                        <div>
+                          <p className="text-xs font-medium" style={{ color: fg(result.success ? "ok" : "bad") }}>
+                            {result.success ? "The agent's answer" : "Why it failed"}
+                          </p>
+                          <p className="mt-1 whitespace-pre-wrap" style={{ color: result.success ? undefined : fg("bad") }}>
+                            {result.success ? result.summary : result.error}
+                          </p>
+                          <p className="mt-1 text-xs text-muted">
+                            Files: {result.files.map((f) => f.path).join(", ") || "none"} · {duration(result.duration_ms)} · {tokens(result.tokens_used)} tokens
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  </details>
+                );
+              })}
+            </div>
+          )}
+        </Card>
+        <Card title="Activity" description="Changes since you opened the page, newest first." className="xl:col-span-2">
+          <ActivityList lines={lines.filter((l) => l.text !== greeting())} empty="Nothing has changed yet." />
+        </Card>
+      </div>
+
+      <Card title={`Generated application (${files.length} files)`} description={`Saved in workspace/${project.id}/ on the master, one git commit per task.`}>
+        <FileExplorer projectId={id} files={files} />
+      </Card>
+
+      <details className="card p-4 text-sm">
+        <summary className="cursor-pointer font-medium text-ink">Requirement text</summary>
+        <pre className="mt-3 max-h-80 overflow-auto whitespace-pre-wrap font-sans text-sm text-muted">{project.requirement_text}</pre>
+      </details>
     </>
   );
 }

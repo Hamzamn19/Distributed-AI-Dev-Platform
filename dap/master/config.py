@@ -16,6 +16,8 @@ class MasterSettings:
     database_url: str
     cors_origins: list[str]
     heartbeat_timeout_sec: int
+    task_timeout_sec: int
+    a2a_poll_interval_sec: float
 
 
 def get_settings() -> MasterSettings:
@@ -27,4 +29,6 @@ def get_settings() -> MasterSettings:
         database_url=os.getenv("DATABASE_URL", "sqlite:///./data/dap.db"),
         cors_origins=[o.strip() for o in origins.split(",") if o.strip()],
         heartbeat_timeout_sec=int(os.getenv("HEARTBEAT_TIMEOUT_SEC", "30")),
+        task_timeout_sec=int(os.getenv("TASK_TIMEOUT_SEC", "900")),
+        a2a_poll_interval_sec=float(os.getenv("A2A_POLL_INTERVAL_SEC", "3")),
     )

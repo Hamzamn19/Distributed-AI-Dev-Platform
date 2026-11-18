@@ -1,5 +1,9 @@
 # Generated file storage — S2-05 local increment
 
+> Sprint 3 (decision D3): the layout below is replaced by one git repository per
+> project, `workspace/<project_id>/`, written by the master's integrator. The path
+> checks of this module are reused (`check_paths`). This page describes S2-05.
+
 On 21 October, Can selected this layout for implementation:
 
 ```text
