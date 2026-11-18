@@ -1,0 +1,64 @@
+{
+  "started": true,
+  "error": null,
+  "checks": [
+    {
+      "record": null,
+      "step": "page",
+      "result": "pass",
+      "detail": "GET / -> 200"
+    },
+    {
+      "record": null,
+      "step": "stats",
+      "result": "pass",
+      "detail": "GET /api/stats -> 200"
+    },
+    {
+      "record": "tasks",
+      "step": "list",
+      "result": "pass",
+      "detail": "GET /api/tasks -> 200"
+    },
+    {
+      "record": "tasks",
+      "step": "search",
+      "result": "pass",
+      "detail": "GET /api/tasks?search=a -> 200"
+    },
+    {
+      "record": "tasks",
+      "step": "create",
+      "result": "pass",
+      "detail": "POST /api/tasks -> 201"
+    },
+    {
+      "record": "tasks",
+      "step": "get",
+      "result": "pass",
+      "detail": "GET /api/tasks/4 -> 200"
+    },
+    {
+      "record": "tasks",
+      "step": "update",
+      "result": "pass",
+      "detail": "PUT /api/tasks/4 -> 200"
+    },
+    {
+      "record": "tasks",
+      "step": "delete",
+      "result": "pass",
+      "detail": "DELETE /api/tasks/4 -> 204"
+    },
+    {
+      "record": "tasks",
+      "step": "gone",
+      "result": "pass",
+      "detail": "GET /api/tasks/4 -> 404"
+    }
+  ],
+  "passed": 9,
+  "failed": 0,
+  "rules": 0,
+  "summary": "9 of 9 checks passed"
+}

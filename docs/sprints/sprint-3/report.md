@@ -71,6 +71,11 @@ on 19 November.**
 - Full suite on the integration branch, 18 November: **264 passed, 0 failed**
   (`pytest`, includes A2A server, orchestrator, acceptance, self-correction,
   generated-app and test-day script tests).
+- **Real-model end-to-end run on one PC, 19 November 01:05**
+  ([evidence](evidence/README.md)): master + two workers over A2A, one local
+  model (gemma4-26b, thinking disabled); requirement `kisa.md` → decompose 8 s
+  → four tasks done by the workers in 131 s → generated app running → master
+  acceptance check **9 of 9 passed**. Full log ends with `E2E PASSED`.
 - Test-day records: connection checks of six workers, the models each member runs,
   and per-question measurement results in `docs/models.md` (gemma-4-26b measured on
   two PCs; six-agent table with the new scoring rationale).

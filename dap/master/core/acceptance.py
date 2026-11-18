@@ -164,6 +164,13 @@ def value(name, part):
     kind, fmt = part.get("type"), part.get("format", "")
     if "enum" in part:
         return part["enum"][0]
+    pattern = part.get("pattern")
+    if pattern:
+        # The pattern usually lists the allowed values: ^(active|completed)$.
+        choices = [c.strip().strip("^$") for c in re.sub(r"[()]", "", pattern).split("|")
+                   if c.strip().strip("^$")] if re.fullmatch(r"\^?\([^)]+\)\$?", pattern) else []
+        if choices:
+            return choices[0]
     if "default" in part and part["default"] is not None:
         return part["default"]
     if kind in ("integer", "number"):
