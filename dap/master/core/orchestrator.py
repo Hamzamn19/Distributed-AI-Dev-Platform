@@ -26,6 +26,12 @@ For one run:
 - A new run ("Run again" in the UI) sends the failed tasks again, to their agent
   (or a replacement, as above); attempt counts the tries, the old error stays stored.
 Choosing another agent for a failed task within one run is Sprint 4.
+
+Review note (Baran, S3 adoption of master core and api):
+- The project is completed when the application starts; failed acceptance checks are
+  only reported in acceptance.json, they do not fail the project.
+- POST /projects/{id}/run answers 202 with the project as it is at that moment; the
+  status changes to in_progress a moment later, so the UI follows /tasks and /projects.
 """
 
 import logging
