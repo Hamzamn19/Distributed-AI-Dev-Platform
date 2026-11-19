@@ -349,8 +349,11 @@ def test_a_syntax_error_shows_the_wrong_line():
     database = GOOD_DATABASE + "\n\ndef add_task(title: str, note: str = None, project_id: int):\n    pass\n"
     with pytest.raises(ValueError) as error:
         executor.check_output(database_task(), output(backend__database_py=database))
-    assert "parameter without a default follows parameter with a default" in str(error.value)
-    assert "def add_task(title: str, note: str = None, project_id: int):" in str(error.value)
+    # The wording differs between Python versions (3.11 vs 3.12+).
+    message = str(error.value)
+    assert ("parameter without a default follows parameter with a default" in message
+            or "non-default argument follows default argument" in message)
+    assert "def add_task(title: str, note: str = None, project_id: int):" in message
 
 
 # The database.py of the simple to-do round: names right, but two functions break.
