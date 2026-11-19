@@ -24,7 +24,8 @@ jobs:
         run: pip install -r requirements.txt
 
       - name: Run pytest (LLM_MOCK=1 is set by tests/conftest.py)
-        run: pytest
+        # `python -m pytest` adds the repository root to sys.path, so `dap` imports.
+        run: python -m pytest
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
