@@ -50,9 +50,11 @@ on 19 November.**
    - Reusable results of #64/#65 (one task per type with target files, dependency
      waiting, output restriction) are carried by the merged implementation; the two
      pull requests are re-pointed to contract v1.3 in Sprint 4.
-5. **Per-owner adoption review (19 November, pending).** Every owner reviews the
+5. **Per-owner adoption review (19 November, in progress).** Every owner reviews the
    merged code of their own folders and commits an adoption confirmation, so the
    A2A implementation becomes the team's reviewed code, not one person's spike.
+   Done: Baran (commit 2999e0e, master core + api reviewed, review notes added to
+   `orchestrator.py`). Pending: Can, Eray, Fatma, Abdurrahman, Okan (contract v1.3).
 
 ## Work distribution
 
@@ -79,7 +81,7 @@ on 19 November.**
 - Test-day records: connection checks of six workers, the models each member runs,
   and per-question measurement results in `docs/models.md` (gemma-4-26b measured on
   two PCs; six-agent table with the new scoring rationale).
-- Pending evidence: per-owner adoption commits (19 November), a generated
+- Pending evidence: adoption commits of the remaining owners (19 November), a generated
   application run on at least two PCs, and the CI workflow running the full suite.
 
 ## Retrospective input
