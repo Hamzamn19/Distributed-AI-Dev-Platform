@@ -84,6 +84,17 @@ on 19 November.**
 - Pending evidence: adoption commits of the remaining owners (19 November), a generated
   application run on at least two PCs, and the CI workflow running the full suite.
 
+## Closing day (19 November)
+
+- Adoption review started: **Baran reviewed master core + api and committed his
+  adoption note (2999e0e)**; the remaining owners follow the same checklist.
+- CI on the branch is green (264 tests + frontend build) after two CI-environment
+  fixes (`python -m pytest`, and a test accepting both Python 3.11/3.12+ error
+  wordings).
+- Live demonstration for the instructor: master on Baran's PC + `agent-hamza`
+  connected over Tailscale with the real model (gemma4-26b via Ollama) — the
+  instructor accepted the demo.
+
 ## Retrospective input
 
 The Sprint 2 proposal (one repeatable integrated checkpoint before a card is
