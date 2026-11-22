@@ -279,7 +279,8 @@ def _complete(run: _Run, task: Task, sent: _Sent, remote: A2ATask) -> None:
             files=output.files, duration_ms=max(output.duration_ms, 0),
             tokens_used=max(output.prompt_tokens + output.completion_tokens, 0),
         )
-        integrator.commit_task(run.project_id, task, sent.agent.agent_id, output.files)
+        integrator.commit_task(run.project_id, task, sent.agent.agent_id, output.files,
+                               agent=sent.agent)
         results.store_task_result(result, run_id=run.run_id)
     except Exception as exc:  # bad output, unsafe path, disk problem
         _fail(run, task, sent.agent.agent_id, f"result could not be stored: {exc}", sent)

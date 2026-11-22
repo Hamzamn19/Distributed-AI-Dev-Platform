@@ -420,7 +420,11 @@ one create-and-list test per record type, then its business rules and actions.
 A worker may only write the files of its task (`target_files`). The files of a
 project go to `workspace/<project_id>/`, a git repository with one commit per
 completed task (`"<task type>: <title> (by <agent_id>)"`). `workspace/` is
-never committed to the team repository.
+never committed to the team repository. The master starts every file an agent
+wrote with one comment naming that agent, in the comment syntax of the file
+(`#`, `//`, `/* */`, `<!-- -->`; in HTML after the doctype), for example
+`# Written by agent-eray (Eray-PC, model qwen2.5-coder:7b) - database task "...", 2026-11-22 21:40 UTC`.
+The ready template files get none.
 
 ## 13. A2A between master and workers (from Sprint 3)
 
