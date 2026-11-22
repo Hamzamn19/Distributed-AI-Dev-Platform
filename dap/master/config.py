@@ -18,6 +18,7 @@ class MasterSettings:
     heartbeat_timeout_sec: int
     task_timeout_sec: int
     a2a_poll_interval_sec: float
+    preview_port: int  # where "Open the app" runs a generated application
 
 
 def get_settings() -> MasterSettings:
@@ -31,4 +32,5 @@ def get_settings() -> MasterSettings:
         heartbeat_timeout_sec=int(os.getenv("HEARTBEAT_TIMEOUT_SEC", "30")),
         task_timeout_sec=int(os.getenv("TASK_TIMEOUT_SEC", "900")),
         a2a_poll_interval_sec=float(os.getenv("A2A_POLL_INTERVAL_SEC", "3")),
+        preview_port=int(os.getenv("PREVIEW_PORT", "8100")),
     )

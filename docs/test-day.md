@@ -72,15 +72,12 @@ bilgisayarın 9000 portuna gönderir.
 4. Sonunda master uygulamayı test eder. Sonuç **Master check** tablosunda
    görünür.
 
-## 6. Üretilen uygulamayı açmak (Baran'ın bilgisayarında)
+## 6. Üretilen uygulamayı açmak
 
-```bash
-cd workspace/<project_id>
-pip install -r requirements.txt
-uvicorn backend.main:app --port 8100
-```
-
-Tarayıcıda `http://localhost:8100` açılır. 8000 master'ındır, bu yüzden 8100.
+Proje sayfasında (ya da ana sayfadaki **Open latest app** ile) **▶ Open the app** düğmesine
+basın. Master uygulamayı kendi bilgisayarında **8100** portunda başlatır ve yeni sekmede
+`http://<Baran'ın IP'si>:8100` açılır; herkes kendi tarayıcısından kullanabilir. Aynı anda tek
+uygulama açık olur: başka bir projenin düğmesine basılınca önceki kapanır.
 
 ## Sorun olursa
 

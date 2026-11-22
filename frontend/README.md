@@ -64,3 +64,7 @@ only, so the UI needs no internet.
   task reports, activity and the files with line numbers (`FileExplorer.tsx`).
 - `/agents`: one card per agent: model, preferred task, last heartbeat, current
   task, skills as bars, and whether the master reaches its A2A server.
+- "▶ Open the app" (`components/OpenAppButton.tsx`) on a project page once its backend
+  task is done, and "Open latest app" on the overview: the master runs the generated
+  application (`POST /projects/{id}/preview`) and a new tab opens it at
+  `http://<master>:<port>/`.

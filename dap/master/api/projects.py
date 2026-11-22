@@ -19,6 +19,9 @@ Endpoints to add (paths are relative to /api/v1, see docs/contracts/PROJECT_CONT
     GET  /projects/{id}/results                       -> 200 list[TaskResult]
     GET  /projects/{id}/files                         -> 200 list[str]
     GET  /projects/{id}/files/{path}                  -> 200 text, 404
+    POST /projects/{id}/preview                       -> 200 {"project_id", "port"}
+        Runs the generated application on PREVIEW_PORT (core/preview.py); 409 when
+        it has no backend/main.py yet, 502 when it does not start.
 
 Status: all endpoints are done. After a successful decompose the project is "in_progress"
 (the enum has no "decomposed"); while the model works it is "decomposing".
@@ -35,7 +38,7 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from dap.master.config import get_settings
-from dap.master.core import decomposer, integrator, orchestrator, selector
+from dap.master.core import decomposer, integrator, orchestrator, preview, selector
 from dap.master.db import repositories, results
 from dap.shared.enums import ProjectStatus, TaskStatus
 from dap.shared.schemas import Project, ProjectCreate, Task, TaskResult
@@ -160,3 +163,16 @@ def read_file(project_id: str, path: str) -> str:
         return integrator.read_file(project_id, path)
     except (ValueError, FileNotFoundError):
         raise HTTPException(status_code=404, detail=f"File {path!r} not found")
+
+
+@router.post("/{project_id}/preview")
+def start_preview(project_id: str) -> dict:
+    """Run the project's generated application; the UI opens http://<master>:<port>/."""
+    _get_project_or_404(project_id)
+    try:
+        port = preview.start(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=409, detail=f"Cannot open the app: {exc}")
+    except preview.PreviewError as exc:
+        raise HTTPException(status_code=502, detail=f"The app does not start: {exc}")
+    return {"project_id": project_id, "port": port}

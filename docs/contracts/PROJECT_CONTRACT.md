@@ -117,6 +117,7 @@ written in code. Added in Sprint 3:
 | `WORKER_PUBLIC_URL` | worker | empty | Address the master uses, e.g. `http://100.x.y.z:9000`. Empty: `tailscale ip -4`, else `http://127.0.0.1:<WORKER_PORT>` with a warning |
 | `TASK_TIMEOUT_SEC` | master | `900` | A task not finished after this is marked `failed` |
 | `A2A_POLL_INTERVAL_SEC` | master | `3` | How often the master asks a worker for task status |
+| `PREVIEW_PORT` | master | `8100` | Port where "Open the app" runs a generated application on the master PC (from Sprint 3) |
 | `LLM_TIMEOUT_SEC` | both | `120` | Seconds to wait for one model answer; use 600 on worker PCs |
 | `LLM_THINK` | both | `0` | `0`: requests ask reasoning models not to think first (`chat_template_kwargs.enable_thinking=false`, read by llama.cpp's llama-server); `1`: thinking allowed |
 | `LLM_MAX_TOKENS` | both | `8192` | Most tokens of one model answer when the caller gives no limit |
@@ -205,6 +206,7 @@ All paths start with `/api/v1`. Endpoints called by workers need the
 | 3 | `GET /projects/{id}/results` | - | list of TaskResult | frontend |
 | 3 | `GET /projects/{id}/files` | - | list of file paths in `workspace/<project_id>/` | frontend |
 | 3 | `GET /projects/{id}/files/{path}` | - | the file as text; 404; a path outside the project folder is refused | frontend |
+| 3 | `POST /projects/{id}/preview` | - | 200 `{"project_id", "port"}`: the generated application runs on `PREVIEW_PORT` of the master (one at a time); 409 without a written backend, 502 when it does not start | frontend |
 | 4 | `POST /tasks/{id}/reassign` | - | 200 Task | frontend |
 | 5 | `GET /metrics/agents` | - | time, success rate, tokens per agent | frontend |
 

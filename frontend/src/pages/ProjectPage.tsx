@@ -17,6 +17,7 @@ import type { Project, Task, TaskResult } from "../api/types";
 import AcceptanceMatrix from "../components/AcceptanceMatrix";
 import Badge from "../components/Badge";
 import FileExplorer from "../components/FileExplorer";
+import OpenAppButton from "../components/OpenAppButton";
 import Pipeline from "../components/Pipeline";
 import Timeline from "../components/Timeline";
 import TypeBadge from "../components/TypeBadge";
@@ -64,7 +65,8 @@ function nextStep(project: Project, tasks: Task[], acceptance: AcceptanceReport 
     return step(
       "ok",
       "Done",
-      acceptance ? `All tasks are completed. Master check: ${acceptance.summary}. The files are below.` : "All tasks are completed. The files are below.",
+      (acceptance ? `All tasks are completed. Master check: ${acceptance.summary}. ` : "All tasks are completed. ")
+        + 'Press "Open the app" to use the generated application; the files are below.',
     );
   if (project.status === "failed" || failedTask)
     return step("bad", "Something failed", failedTask ? `The ${failedTask.type} task failed; open its report below. You can run the project again.` : "Open the task reports below, then run again.", "run", "Run again");
@@ -151,6 +153,8 @@ export default function ProjectPage() {
   const elapsed = (settled ? new Date(project.updated_at).getTime() : now) - new Date(project.created_at).getTime();
   const done = tasks.filter((t) => t.status === "completed").length;
   const tried = acceptance ? acceptance.passed + acceptance.failed : 0;
+  // The template's main.py is there from the start; the app exists once the backend task wrote it.
+  const hasApp = tasks.some((t) => t.type === "backend" && t.status === "completed");
   const labels: Record<Action, string> = { decompose: "Decompose", assign: "Assign agents", run: "Run on agents" };
   const allowed: Record<Action, boolean> = { decompose: true, assign: hasTasks, run: hasAssignments };
 
@@ -165,7 +169,10 @@ export default function ProjectPage() {
             <h1 className="truncate text-2xl font-semibold text-ink">{project.name}</h1>
             <p className="text-sm text-muted">Created {stamp(project.created_at)}</p>
           </div>
-          <Badge value={project.status} large />
+          <div className="flex flex-wrap items-start gap-3">
+            {hasApp && <OpenAppButton projectId={project.id} primary={project.status === "completed"} />}
+            <Badge value={project.status} large />
+          </div>
         </div>
       </div>
 
