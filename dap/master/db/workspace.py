@@ -1,4 +1,11 @@
-"""S2-05: store generated files under <root>/<project_id>/<run_id>/.
+"""Generated files in the workspace.
+
+Sprint 3 (contract v1.2, section 12.1): write_project_files() writes a task's
+files straight into <root>/<project_id>/, over the template file with the same
+path; a retry overwrites again. The per-run folder of Sprint 2 is no longer
+used by the master; save_generated_files() below is kept only for reference.
+
+S2-05 (old): store generated files under <root>/<project_id>/<run_id>/.
 
 Can selected project/run isolation on 21 October. Master integration is pending:
 the caller supplies the workspace root and one run ID shared by all tasks in
@@ -98,4 +105,50 @@ def save_generated_files(
             target.parent.mkdir(parents=True, exist_ok=True)
             with target.open("xb") as output:
                 output.write(content)
+    return [path for path, _ in prepared]
+
+
+def write_project_files(
+    project_id: str,
+    files: list[GeneratedFile],
+    *,
+    workspace_root: Path,
+) -> list[Path]:
+    """Write UTF-8 text files to <root>/<project_id>/<path>, replacing existing ones.
+
+    All paths are checked before anything is written. A path that would need an
+    existing file to be a directory (or the reverse) raises FileExistsError.
+    Returns the written paths in input order.
+    """
+    root = Path(workspace_root).resolve()
+    project_relative = Path(_identifier(project_id))
+    _reject_links(root, project_relative)
+    project_directory = root / project_relative
+    prepared: list[tuple[Path, bytes]] = []
+    seen: set[str] = set()
+    for file in files:
+        relative = _relative_path(file.path)
+        key = relative.as_posix().casefold()
+        if key in seen:
+            raise ValueError(f"Duplicate generated file path: {file.path!r}")
+        seen.add(key)
+        _reject_links(root, project_relative / relative)
+        target = project_directory / relative
+        if target.is_dir():
+            raise FileExistsError(f"Generated file path is an existing folder: {relative}")
+        prepared.append((target, file.content.encode("utf-8")))
+
+    targets = {path for path, _ in prepared}
+    for target, _ in prepared:
+        if any(parent in targets for parent in target.parents):
+            raise ValueError("A generated file cannot also be another file's directory")
+        parent = target.parent
+        while parent != root:
+            if parent.exists() and not parent.is_dir():
+                raise FileExistsError(f"Output directory is an existing file: {parent}")
+            parent = parent.parent
+
+    for target, content in prepared:
+        target.parent.mkdir(parents=True, exist_ok=True)
+        target.write_bytes(content)
     return [path for path, _ in prepared]

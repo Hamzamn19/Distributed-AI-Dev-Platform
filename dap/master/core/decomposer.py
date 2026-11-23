@@ -4,18 +4,23 @@ Owner: Baran - card S1-06.
 
     decompose(requirement_text: str) -> list[TaskCreate]
 
-The model is asked for (member guide, agreement 2):
+The model is asked for:
 
-    {"tasks": [{"key", "title", "description", "type", "depends_on"}]}
-
-"key" is a temporary name inside the answer and "depends_on" lists keys. Every
-task gets a UUID4 here and the keys in depends_on are translated to those ids.
+    {"records": ["customers", "orders"],
+     "tasks": [{"title", "description", "type"}]}
 
 Rules:
-- Only the Sprint 1 types are accepted (SPRINT1_TASK_TYPES), and each of them
-  must appear at least once.
-- A broken answer is retried once; after that a fixed template with one task
-  per type is returned.
+- Exactly one task per Sprint 1 type, always in the order database -> backend
+  -> frontend -> testing. The order and the dependencies between the tasks are
+  fixed here (each task waits for the one before it; testing also waits for
+  the backend); whatever the model says about order or depends_on is ignored.
+  If a type appears twice, the first one is used.
+- "records" are the table names of the application: at least 1, at most 12
+  (MAX_RECORDS). An answer without a usable "records" list is broken. The line
+  "Records: customers, orders. This task covers all of them." is added to the
+  end of every description.
+- A broken answer is retried once; after that a fixed template is returned
+  (it has no records, so no Records line: the table names are unknown).
 - When the model cannot be reached, chat() raises RuntimeError. It is not
   caught here: /decompose sets the project to "failed" and answers 502.
 """
@@ -25,48 +30,52 @@ import logging
 import re
 import uuid
 
-from dap.shared.enums import SPRINT1_TASK_TYPES, TaskType
+from dap.shared.enums import TaskType
 from dap.shared.llm_client import chat
 from dap.shared.schemas import TaskCreate
 
 logger = logging.getLogger(__name__)
 
 ATTEMPTS = 2  # first answer + one retry
+MAX_RECORDS = 12
 
-_TYPE_NAMES = ", ".join(t.value for t in SPRINT1_TASK_TYPES)
+# Fixed order of the tasks and what each one waits for.
+TASK_ORDER = [TaskType.DATABASE, TaskType.BACKEND, TaskType.FRONTEND, TaskType.TESTING]
+_DEPENDS_ON = {
+    TaskType.DATABASE: [],
+    TaskType.BACKEND: [TaskType.DATABASE],
+    TaskType.FRONTEND: [TaskType.BACKEND],
+    TaskType.TESTING: [TaskType.BACKEND, TaskType.FRONTEND],
+}
+_TYPE_NAMES = ", ".join(t.value for t in TASK_ORDER)
 
 SYSTEM_PROMPT = f"""You are the Master Agent of a multi-agent software platform.
-Break the user's software requirement into small, concrete development tasks.
+Break the user's software requirement into exactly {len(TASK_ORDER)} development tasks.
 
 Rules:
-- Every task has exactly one type: {_TYPE_NAMES}.
-- Produce at least one task of each type.
-- "key" is a short unique name such as "T1".
-- "depends_on" lists the keys of tasks that must finish first
-  (database first, then backend, then frontend, testing last).
+- One task of each type: {_TYPE_NAMES}. No other types, no second task of a type.
+- "records" lists the database table names of the application, in lowercase
+  with underscores, for example "customers", "orders".
 - Answer with JSON only, exactly in this shape:
 
 {{
+  "records": ["customers", "orders"],
   "tasks": [
-    {{"key": "T1", "title": "short title", "description": "what must be done",
-      "type": "database", "depends_on": []}}
+    {{"title": "short title", "description": "what must be done",
+      "type": "database"}}
   ]
 }}"""
 
 # Fallback when the model keeps answering with broken JSON: one task per type.
 FALLBACK_TASKS = [
-    {"key": "T1", "type": "database", "title": "Design database schema",
-     "description": "Define the tables and relations the application needs.",
-     "depends_on": []},
-    {"key": "T2", "type": "backend", "title": "Build REST API",
-     "description": "Implement the backend endpoints on top of the database.",
-     "depends_on": ["T1"]},
-    {"key": "T3", "type": "frontend", "title": "Build web pages",
-     "description": "Create the user interface that calls the REST API.",
-     "depends_on": ["T2"]},
-    {"key": "T4", "type": "testing", "title": "Write tests",
-     "description": "Test the API and the web pages.",
-     "depends_on": ["T2", "T3"]},
+    {"type": "database", "title": "Design database schema",
+     "description": "Define the tables and relations the application needs."},
+    {"type": "backend", "title": "Build REST API",
+     "description": "Implement the backend endpoints on top of the database."},
+    {"type": "frontend", "title": "Build web pages",
+     "description": "Create the user interface that calls the REST API."},
+    {"type": "testing", "title": "Write tests",
+     "description": "Test the API and the web pages."},
 ]
 
 
@@ -85,20 +94,38 @@ def _extract_json(text: str) -> dict:
         return json.loads(text[start : end + 1])
 
 
-def _to_task_creates(data: object) -> list[TaskCreate]:
+def _table_names(data: dict) -> list[str]:
+    """The table names from "records" (1 to MAX_RECORDS); otherwise ValueError.
+
+    Anything that is not a plain snake_case name is dropped, repeats are
+    removed; what is left must still be 1 to MAX_RECORDS names.
+    """
+    raw = data.get("records")
+    if not isinstance(raw, list):
+        raise ValueError('answer has no "records" list')
+    names = []
+    for item in raw:
+        name = str(item).strip().lower()
+        if re.fullmatch(r"[a-z_][a-z0-9_]*", name) and name not in names:
+            names.append(name)
+    if not names:
+        raise ValueError('"records" has no usable table name')
+    if len(names) > MAX_RECORDS:
+        raise ValueError(f'"records" has {len(names)} names, at most {MAX_RECORDS} are allowed')
+    return names
+
+
+def _to_task_creates(data: object, *, with_records: bool = True) -> list[TaskCreate]:
     """Validate the model's answer and turn it into TaskCreate objects.
 
     Raises ValueError when the answer cannot be used.
     """
     if not isinstance(data, dict) or not isinstance(data.get("tasks"), list):
         raise ValueError('answer has no "tasks" list')
-    raw_tasks = data["tasks"]
-    if not raw_tasks:
-        raise ValueError("answer has no tasks")
 
-    allowed = {t.value for t in SPRINT1_TASK_TYPES}
-    ids: dict[str, str] = {}
-    for index, raw in enumerate(raw_tasks, start=1):
+    allowed = {t.value for t in TASK_ORDER}
+    first_of_type: dict[str, dict] = {}
+    for index, raw in enumerate(data["tasks"], start=1):
         if not isinstance(raw, dict):
             raise ValueError(f"task {index} is not an object")
         task_type = str(raw.get("type") or "").strip().lower()
@@ -106,34 +133,35 @@ def _to_task_creates(data: object) -> list[TaskCreate]:
             raise ValueError(f"task {index} has type {task_type!r}, expected one of {_TYPE_NAMES}")
         if not str(raw.get("title") or "").strip():
             raise ValueError(f"task {index} has no title")
-        key = str(raw.get("key") or f"T{index}")
-        if key in ids:
-            raise ValueError(f"duplicate key {key!r}")
-        ids[key] = str(uuid.uuid4())
+        first_of_type.setdefault(task_type, raw)
 
-    missing = allowed - {str(raw["type"]).strip().lower() for raw in raw_tasks}
+    missing = allowed - set(first_of_type)
     if missing:
         raise ValueError(f"missing task types: {', '.join(sorted(missing))}")
 
+    records_line = ""
+    if with_records:
+        tables = _table_names(data)
+        records_line = f"\n\nRecords: {', '.join(tables)}. This task covers all of them."
+    ids = {task_type: str(uuid.uuid4()) for task_type in TASK_ORDER}
     tasks = []
-    for index, raw in enumerate(raw_tasks, start=1):
-        key = str(raw.get("key") or f"T{index}")
-        deps = raw.get("depends_on")
-        deps = deps if isinstance(deps, list) else []
+    for task_type in TASK_ORDER:
+        raw = first_of_type[task_type.value]
         title = str(raw["title"]).strip()
+        description = str(raw.get("description") or title).strip()
+        description += records_line
         tasks.append(TaskCreate(
-            id=ids[key],
+            id=ids[task_type],
             title=title,
-            description=str(raw.get("description") or title).strip(),
-            type=TaskType(str(raw["type"]).strip().lower()),
-            # Unknown keys and self-references are dropped instead of failing.
-            depends_on=[ids[str(d)] for d in deps if str(d) in ids and str(d) != key],
+            description=description,
+            type=task_type,
+            depends_on=[ids[dep] for dep in _DEPENDS_ON[task_type]],
         ))
     return tasks
 
 
 def decompose(requirement_text: str) -> list[TaskCreate]:
-    """Break a requirement into Sprint 1 tasks (frontend, backend, database, testing)."""
+    """Break a requirement into four tasks: database, backend, frontend, testing (in that order)."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Requirement:\n{requirement_text.strip()}"},
@@ -151,4 +179,4 @@ def decompose(requirement_text: str) -> list[TaskCreate]:
                            "Answer again with JSON only, following the shape exactly.",
             })
     logger.warning("Using the fixed fallback template (%d tasks)", len(FALLBACK_TASKS))
-    return _to_task_creates({"tasks": FALLBACK_TASKS})
+    return _to_task_creates({"tasks": FALLBACK_TASKS}, with_records=False)

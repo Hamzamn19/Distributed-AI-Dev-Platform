@@ -75,14 +75,14 @@ def _seed_agent(agent_id: str = "worker-a"):
     ))
 
 
-def _seed_project_with(tasks: list[tuple[str, list[str]]]):
+def _seed_project_with(tasks: list[tuple[str, list[str]]], types=None):
     """Create one project; `tasks` is a list of (task_id, depends_on)."""
     project = repositories.create_project(ProjectCreate(
         name="Worker flow", requirement_text="requirement for the worker endpoint tests",
     ))
     created = repositories.create_tasks(project.id, [
         TaskCreate(id=task_id, title=task_id, description="do it",
-                   type=TaskType.BACKEND, depends_on=deps)
+                   type=(types or {}).get(task_id, TaskType.BACKEND), depends_on=deps)
         for task_id, deps in tasks
     ])
     return project, {task.id: task for task in created}
@@ -101,7 +101,7 @@ def _result(task_id: str, body: dict, headers: dict | None = None):
 def _payload(task_id: str, agent_id: str, **over) -> dict:
     body = {
         "task_id": task_id, "agent_id": agent_id, "success": True,
-        "summary": "done", "files": [{"path": "main.py", "content": "print(1)\n"}],
+        "summary": "done", "files": [{"path": "backend/main.py", "content": "print(1)\n"}],
         "error": None, "duration_ms": 1000, "tokens_used": 50,
     }
     body.update(over)
@@ -167,6 +167,18 @@ def test_next_returns_the_agents_own_assigned_task_first():
     assert response.json()["id"] == "t-one"
 
 
+def test_next_waits_for_dependencies_of_an_already_assigned_task(tmp_path, monkeypatch):
+    monkeypatch.setattr(tasks_api, "workspace_root", tmp_path)
+    _seed_agent()
+    _seed_agent("worker-b")
+    _seed_project_with([("t-one", []), ("t-two", ["t-one"])])
+    repositories.assign_task("t-one", "worker-b", "picked")
+    repositories.assign_task("t-two", "worker-a", "picked")
+    assert _next("worker-a").status_code == 204
+    assert _result("t-one", _payload("t-one", "worker-b")).status_code == 200
+    assert _next("worker-a").json()["id"] == "t-two"
+
+
 # ---------------------------------------------------------------- result
 
 
@@ -209,10 +221,69 @@ def test_success_result_completes_the_task_and_saves_files(tmp_path, monkeypatch
     r = _result("t-one", _payload("t-one", "worker-a"))
     assert r.status_code == 200
     assert r.json()["status"] == "completed"
-    run_dirs = list((tmp_path / r.json()["project_id"]).iterdir())
-    assert len(run_dirs) == 1
-    saved = run_dirs[0] / "main.py"
+    saved = tmp_path / r.json()["project_id"] / "backend/main.py"   # no run folder (contract 12.1)
     assert saved.read_text(encoding="utf-8") == "print(1)\n"
+
+
+def test_result_files_overwrite_the_template_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(tasks_api, "workspace_root", tmp_path)
+    _seed_agent()
+    project, _ = _seed_project_with([("t-one", [])])
+    (tmp_path / project.id / "backend").mkdir(parents=True)
+    (tmp_path / project.id / "backend/main.py").write_text("# template\n", encoding="utf-8")
+    repositories.assign_task("t-one", "worker-a", "picked")
+    assert _result("t-one", _payload("t-one", "worker-a")).status_code == 200
+    assert (tmp_path / project.id / "backend/main.py").read_text(encoding="utf-8") == "print(1)\n"
+
+
+# -------------------------------------------------------------- inputs
+
+
+def _inputs(task_id: str, headers: dict | None = None):
+    return client.get(f"/api/v1/tasks/{task_id}/inputs",
+                      headers=headers if headers is not None else _auth())
+
+
+def _complete(task_id: str, files: list[dict], tmp_path, monkeypatch, success=True):
+    monkeypatch.setattr(tasks_api, "workspace_root", tmp_path)
+    repositories.assign_task(task_id, "worker-a", "picked")
+    r = _result(task_id, _payload(task_id, "worker-a", files=files, success=success,
+                                  error=None if success else "boom"))
+    assert r.status_code == 200
+
+
+def test_inputs_needs_the_token_and_a_known_task():
+    _seed_agent()
+    _seed_project_with([("t-one", [])])
+    assert _inputs("t-one", headers={}).status_code == 401
+    assert _inputs("missing").status_code == 404
+
+
+def test_inputs_of_a_task_without_dependencies_is_empty():
+    _seed_agent()
+    _seed_project_with([("t-one", [])])
+    assert _inputs("t-one").json() == []
+
+
+def test_inputs_give_the_files_of_the_dependencies(tmp_path, monkeypatch):
+    _seed_agent()
+    _seed_project_with([("t-db", []), ("t-api", ["t-db"]), ("t-ui", ["t-db", "t-api"]),
+                        ("t-other", [])], {"t-db": TaskType.DATABASE, "t-other": TaskType.FRONTEND})
+    _complete("t-db", [{"path": "backend/database.py", "content": "db\n"}], tmp_path, monkeypatch)
+    _complete("t-api", [{"path": "backend/main.py", "content": "api\n"}], tmp_path, monkeypatch)
+    _complete("t-other", [{"path": "frontend/index.html", "content": "x\n"}], tmp_path, monkeypatch)
+    assert _inputs("t-api").json() == [{"path": "backend/database.py", "content": "db\n"}]
+    assert _inputs("t-ui").json() == [
+        {"path": "backend/database.py", "content": "db\n"},
+        {"path": "backend/main.py", "content": "api\n"},
+    ]
+
+
+def test_inputs_skip_a_dependency_without_a_successful_result(tmp_path, monkeypatch):
+    _seed_agent()
+    _seed_project_with([("t-db", []), ("t-api", ["t-db"])], {"t-db": TaskType.DATABASE})
+    _complete("t-db", [], tmp_path, monkeypatch, success=False)
+    assert _inputs("t-api").json() == []
 
 
 def test_identical_delivery_twice_stores_one_result(tmp_path, monkeypatch):
@@ -254,3 +325,27 @@ def test_failed_result_requeues_until_three_attempts(tmp_path, monkeypatch):
     assert r.json()["status"] == "failed"
     assert r.json()["attempt"] == 2
     assert _next("worker-a").status_code == 204
+
+
+@pytest.mark.parametrize("paths", [["backend/main.py"], ["backend/database.py", "backend/main.py"], []])
+def test_database_result_cannot_overwrite_backend(tmp_path, monkeypatch, paths):
+    monkeypatch.setattr(tasks_api, "workspace_root", tmp_path)
+    _seed_agent()
+    project, _ = _seed_project_with([("db-task", [])], {"db-task": TaskType.DATABASE})
+    backend = tmp_path / project.id / "backend"
+    backend.mkdir(parents=True)
+    original = backend / "main.py"
+    original.write_text("# original", encoding="utf-8")
+    repositories.assign_task("db-task", "worker-a", "picked")
+    response = _result("db-task", _payload("db-task", "worker-a", files=[
+        {"path": path, "content": "# overwritten"} for path in paths
+    ]))
+    assert response.status_code == 422
+    assert original.read_text(encoding="utf-8") == "# original"
+    assert not (backend / "database.py").exists()
+    assert repositories.get_task("db-task").status == TaskStatus.ASSIGNED
+    accepted = _result("db-task", _payload("db-task", "worker-a", files=[
+        {"path": "backend/database.py", "content": "# valid"}
+    ]))
+    assert accepted.status_code == 200
+    assert (backend / "database.py").read_text(encoding="utf-8") == "# valid"

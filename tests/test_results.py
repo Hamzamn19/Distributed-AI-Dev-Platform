@@ -72,7 +72,7 @@ def test_result_saves_payload_files_status_and_one_event(store, task_result, tmp
     assert results.list_task_results(saved.task_id) == [saved]
     task = repositories.get_task(saved.task_id)
     assert task.status == TaskStatus.COMPLETED
-    assert (root / task.project_id / "run-1/db/schema.sql").read_text("utf-8") == saved.files[0].content
+    assert (root / task.project_id / "db/schema.sql").read_text("utf-8") == saved.files[0].content
     assert counts(store) == (1, 1)
     with store[1]() as session:
         history = session.scalar(select(EventModel))
@@ -133,14 +133,14 @@ def test_write_error_does_not_complete_task(store, task_result, tmp_path, monkey
         raise OSError("Disk unavailable")
 
     before = repositories.get_task(task_result.task_id)
-    monkeypatch.setattr(results, "save_generated_files", fail_write)
+    monkeypatch.setattr(results, "write_project_files", fail_write)
     with pytest.raises(OSError, match="Disk unavailable"):
         results.store_task_result(task_result, run_id="run-1", workspace_root=tmp_path)
     assert counts(store) == (0, 0)
     assert repositories.get_task(task_result.task_id) == before
 
 
-def test_new_run_preserves_older_result_and_files(store, task_result, tmp_path):
+def test_new_run_keeps_older_result_and_overwrites_the_file(store, task_result, tmp_path):
     results.store_task_result(task_result, run_id="run-1", workspace_root=tmp_path)
     repositories.assign_task(task_result.task_id, task_result.agent_id, "New execution")
     revised = task_result.model_copy(update={
@@ -151,7 +151,7 @@ def test_new_run_preserves_older_result_and_files(store, task_result, tmp_path):
     assert results.get_task_result(task_result.task_id, run_id="run-2") == revised
     assert len(results.list_task_results(task_result.task_id)) == 2
     project_id = repositories.get_task(task_result.task_id).project_id
-    assert (tmp_path / project_id / "run-1/db/schema.sql").read_text("utf-8") == task_result.files[0].content
+    assert (tmp_path / project_id / "db/schema.sql").read_text("utf-8") == revised.files[0].content
     assert counts(store) == (2, 2)
 
 
@@ -229,7 +229,7 @@ from dap.master.db.database import SessionLocal
 from dap.master.db.models import EventModel
 t=r.get_task(sys.argv[1]); result=results.get_task_result(t.id,run_id='run-1')
 with SessionLocal() as session: count=session.scalar(select(func.count()).select_from(EventModel))
-print(json.dumps({'status':t.status.value,'summary':result.summary,'tokens':result.tokens_used,'duration':result.duration_ms,'events':count,'sql':(Path(sys.argv[2])/t.project_id/'run-1/db/schema.sql').read_text('utf-8')}))
+print(json.dumps({'status':t.status.value,'summary':result.summary,'tokens':result.tokens_used,'duration':result.duration_ms,'events':count,'sql':(Path(sys.argv[2])/t.project_id/'db/schema.sql').read_text('utf-8')}))
 '''
     read = subprocess.run([sys.executable, "-c", reader, written.stdout.strip(), str(root)], cwd=repo_root, env=environment, capture_output=True, text=True, check=True, timeout=30)
     assert json.loads(read.stdout) == {
