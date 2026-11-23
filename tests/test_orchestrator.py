@@ -338,3 +338,34 @@ def test_a_task_gets_the_files_of_every_earlier_task_in_its_chain(db):
     testing = [p for _, p in fake.sent if p.type.value == "testing"][0]
     assert sorted(f.path for f in testing.dependency_files) == [
         "backend/database.py", "backend/main.py", "frontend/index.html"]
+
+
+def test_parallel_mode_starts_testing_while_frontend_still_runs(db, monkeypatch):
+    """RUN_MODE=parallel: frontend and testing are sent together after the backend,
+    even though the frontend has not finished (the tests hit the API, not the UI)."""
+    monkeypatch.setenv("RUN_MODE", "parallel")
+    agent("a1"), agent("a2")
+    pid, _ = project(*APP)
+    # The frontend never finishes, so a sequential run would never send the testing task.
+    fake = FakeA2A(never=("frontend",))
+    status = orchestrator.run_project(pid, client=fake, poll_interval=0, task_timeout=0.1)
+    sent_types = [p.type.value for _, p in fake.sent]
+    assert sent_types == ["database", "backend", "frontend", "testing"]
+    # The frontend was still working when the testing task was sent.
+    assert fake.events.count(("done", "frontend")) == 0
+    assert status in (ProjectStatus.FAILED,)
+    assert statuses(pid)["testing"] in (TaskStatus.IN_PROGRESS, TaskStatus.COMPLETED, TaskStatus.FAILED)
+    assert statuses(pid)["frontend"] == TaskStatus.FAILED
+
+
+def test_sequential_mode_still_waits_for_the_frontend(db, monkeypatch):
+    """Default RUN_MODE: nothing changes; the testing task waits for the frontend."""
+    monkeypatch.delenv("RUN_MODE", raising=False)
+    agent("a1"), agent("a2")
+    pid, _ = project(*APP)
+    fake = FakeA2A(never=("frontend",))
+    status = orchestrator.run_project(pid, client=fake, poll_interval=0, task_timeout=0.1)
+    sent_types = [p.type.value for _, p in fake.sent]
+    assert "testing" not in sent_types
+    assert status == ProjectStatus.FAILED
+    assert statuses(pid)["testing"] == TaskStatus.FAILED

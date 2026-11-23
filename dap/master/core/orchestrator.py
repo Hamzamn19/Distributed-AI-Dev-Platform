@@ -27,6 +27,11 @@ For one run:
   (or a replacement, as above); attempt counts the tries, the old error stays stored.
 Choosing another agent for a failed task within one run is Sprint 4.
 
+Parallel mode (RUN_MODE=parallel, team decision of 23 November): tasks whose
+dependencies are done start together (the sender already works that way), and the
+testing task additionally depends on the backend only, so frontend and testing
+run at the same time on different agents. The default stays sequential.
+
 Review note (Baran, S3 adoption of master core and api):
 - The project is completed when the application starts; failed acceptance checks are
   only reported in acceptance.json, they do not fail the project.
@@ -50,6 +55,7 @@ from dap.shared.enums import (
     AgentStatus,
     ProjectStatus,
     TaskStatus,
+    TaskType,
 )
 from dap.shared.schemas import (
     A2ATask,
@@ -127,6 +133,8 @@ def run_project(project_id: str, *, client=a2a_client, poll_interval: float | No
         raise ValueError(f"Project {project_id!r} does not exist")
     poll = settings.a2a_poll_interval_sec if poll_interval is None else poll_interval
     tasks = repositories.list_tasks(project_id)
+    if settings.run_mode == "parallel":
+        tasks = _relax_for_parallel(tasks)
     run = _Run(
         project_id=project_id, run_id=str(uuid.uuid4()),
         requirement_text=project.requirement_text, token=settings.agent_token, client=client,
@@ -174,6 +182,23 @@ def run_project(project_id: str, *, client=a2a_client, poll_interval: float | No
 
 
 # ------------------------------------------------------------------- sending
+
+
+def _relax_for_parallel(tasks: list[Task]) -> list[Task]:
+    """Parallel mode: the testing task depends on the backend only.
+
+    The generated tests call the API (backend/main.py); they do not need the UI.
+    Dropping the frontend dependency lets frontend and testing start together.
+    """
+    kinds = {t.id: t.type for t in tasks}
+    relaxed = []
+    for task in tasks:
+        if task.type == TaskType.TESTING:
+            deps = [d for d in task.depends_on if kinds.get(d) != TaskType.FRONTEND]
+            if deps != task.depends_on:
+                task = task.model_copy(update={"depends_on": deps})
+        relaxed.append(task)
+    return relaxed
 
 
 def _send_ready_tasks(run: _Run) -> None:
