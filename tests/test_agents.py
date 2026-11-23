@@ -112,3 +112,15 @@ def test_agent_card_endpoint_reports_whether_the_master_reaches_the_worker(monke
                 json={**base, "agent_id": "card-down", "a2a_url": "http://w2:9000"})
     down = client.get("/api/v1/agents/card-down/card")
     assert down.status_code == 502 and "not reachable" in down.json()["detail"]
+
+
+def test_a_registration_without_address_keeps_the_workers_address():
+    # 23 November: scripts/seed_agents.py registered the team without addresses and the
+    # master could no longer send tasks to the running workers.
+    body = {"agent_id": "keep-addr", "name": "K", "owner": "t", "role_hint": None, "model": "m",
+            "provider": "ollama", "capabilities": {"coding": 1, "reasoning": 1, "context": 1}}
+    headers = {"X-Agent-Token": get_settings().agent_token}
+    client.post("/api/v1/agents/register", headers=headers, json={**body, "a2a_url": "http://w:9000"})
+    client.post("/api/v1/agents/register", headers=headers, json=body)  # no a2a_url
+    agents = {a["agent_id"]: a for a in client.get("/api/v1/agents").json()}
+    assert agents["keep-addr"]["a2a_url"] == "http://w:9000"

@@ -12,7 +12,7 @@ kod yazar ve sonucu geri gönderir. Master ve diğer worker'lar aynı Tailscale 
 | Ajan kimliği | `agent-hamza` (Hamza-PC) |
 | Model | `gemma-4-26b-a4b-iq2_xxs` (llama.cpp `llama-server`, port 8080) |
 | Tercih ettiği görev | code_review |
-| Yetenek puanları | coding 50, reasoning 50, context 50 |
+| Yetenek puanları | coding 90, reasoning 90, context 90 |
 | Kod | https://github.com/Tilhium/dap_test (özel repo) |
 | Ayar dosyası | Okan'ın ayrıca gönderdiği `.env.for-hamza` |
 
@@ -59,7 +59,8 @@ Bundan sonraki bütün komutlar **`dap_test` klasöründe, sanal ortam açıkken
 Bu bilgisayar modeli Ollama ile değil **llama.cpp `llama-server`** ile çalıştırır.
 
 1. `llama-server`, kullanıcının her zamanki komutuyla, **`gemma-4-26b-a4b-iq2_xxs`** (GGUF) yüklü olarak **8080 portunda** açık olmalı.
-   Komutu kullanıcıya sor; kendin uydurma.
+   Komutu kullanıcıya sor; kendin uydurma. Komutta bağlam en az **12288** token olmalı: `-c 12288`
+   (yoksa ekle ve llama-server'ı yeniden başlat). Küçük bağlamda uzun prompt'un başı kesilir, model talimatları kaybeder.
 2. Kontrol (bir API anahtarı varsa onunla; anahtarı ekrana yazdırma):
    ```bash
    curl http://localhost:8080/v1/models

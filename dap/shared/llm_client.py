@@ -39,6 +39,22 @@ DEFAULT_MAX_TOKENS = 8192
 # Ollama ignores the field; its models without thinking (qwen2.5, llama3.1) need nothing.
 # For a guarantee start llama-server with --reasoning-budget 0.
 NO_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
+# Qwen3's own switch, written into the conversation, which Ollama passes on: without
+# it qwen3 on Ollama thinks for minutes and runs out of tokens before the code ends
+# (17 November test: database.py with four of its five functions missing).
+NO_THINK_SWITCH = "/no_think"
+SWITCH_MODELS = ("qwen3",)
+
+
+def _with_switch(messages: list[dict], model: str) -> list[dict]:
+    """The messages with /no_think after the last user message, for Qwen3 models."""
+    users = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+    if not model.lower().startswith(SWITCH_MODELS) or not users:
+        return messages
+    last = users[-1]
+    changed = [dict(m) for m in messages]
+    changed[last]["content"] = f"{changed[last]['content']}\n{NO_THINK_SWITCH}"
+    return changed
 ATTEMPTS = 2  # first try + one retry
 
 MOCK_TEXT = "mock response"
@@ -135,6 +151,7 @@ def chat(
                     "max_tokens": max_tokens if max_tokens is not None else _max_tokens()}
     if not _thinking():
         kwargs["extra_body"] = NO_THINKING
+        kwargs["messages"] = _with_switch(messages, model)
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 

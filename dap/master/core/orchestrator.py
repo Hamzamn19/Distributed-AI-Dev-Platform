@@ -23,6 +23,10 @@ For one run:
 - Integrating: when all tasks completed, the master runs its acceptance check
   (acceptance.py) on workspace/<project_id>/; an application that does not even
   start fails the project. The result is acceptance.json in the project folder.
+- cancel(project_id) ("Cancel" in the UI) stops a run at its next round: every task
+  not completed fails with "cancelled by the user" and the project fails. A worker
+  that is writing keeps writing until it ends (A2A CancelTask is not implemented);
+  its answer is ignored. "Run again" continues afterwards.
 - A new run ("Run again" in the UI) sends the failed tasks again, to their agent
   (or a replacement, as above); attempt counts the tries, the old error stays stored.
 Choosing another agent for a failed task within one run is Sprint 4.
@@ -61,12 +65,37 @@ logger = logging.getLogger(__name__)
 UNREACHABLE_LIMIT = 3
 
 _running: set[str] = set()
+_cancelled: set[str] = set()  # runs asked to stop; checked once per round
 _running_lock = threading.Lock()
+CANCELLED = "cancelled by the user"
 
 
 def is_running(project_id: str) -> bool:
     with _running_lock:
         return project_id in _running
+
+
+def cancel(project_id: str) -> bool:
+    """Stop the project's run; False when there was nothing to stop.
+
+    A running project stops at its next round. A project whose run is gone (the
+    master was restarted half way) gets its unfinished tasks and itself set to failed.
+    """
+    with _running_lock:
+        if project_id in _running:
+            _cancelled.add(project_id)
+            return True
+    open_tasks = [t for t in repositories.list_tasks(project_id)
+                  if t.status == TaskStatus.IN_PROGRESS]
+    project = repositories.get_project(project_id)
+    if not open_tasks and (project is None or project.status not in (
+            ProjectStatus.IN_PROGRESS, ProjectStatus.INTEGRATING)):
+        return False
+    for task in open_tasks:
+        repositories.set_task_status(task.id, TaskStatus.FAILED)
+        results.record_event("task_failed", CANCELLED, task_id=task.id)
+    repositories.set_project_status(project_id, ProjectStatus.FAILED)
+    return True
 
 
 def start_run(project_id: str) -> bool:
@@ -85,6 +114,7 @@ def start_run(project_id: str) -> bool:
         finally:
             with _running_lock:
                 _running.discard(project_id)
+                _cancelled.discard(project_id)
 
     threading.Thread(target=work, name=f"run-{project_id[:8]}", daemon=True).start()
     return True
@@ -143,6 +173,16 @@ def run_project(project_id: str, *, client=a2a_client, poll_interval: float | No
     logger.info("Run %s of project %s: %d tasks", run.run_id, project_id, len(run.waiting))
 
     while run.waiting or run.sent:
+        with _running_lock:
+            stop = project_id in _cancelled
+        if stop:
+            for task_id, sent in list(run.sent.items()):
+                _fail(run, repositories.get_task(task_id), sent.agent.agent_id, CANCELLED, sent)
+            for task in list(run.waiting.values()):
+                _fail(run, task, task.assigned_agent_id, CANCELLED)
+            run.sent.clear()
+            run.waiting.clear()
+            break
         before = len(run.waiting)
         _send_ready_tasks(run)
         if not run.sent and len(run.waiting) == before:

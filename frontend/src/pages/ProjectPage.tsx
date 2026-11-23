@@ -4,6 +4,7 @@ import { ACCEPTANCE_FILE } from "../api/acceptance";
 import type { AcceptanceReport } from "../api/acceptance";
 import {
   assignProject,
+  cancelProject,
   decomposeProject,
   getAcceptance,
   getAgents,
@@ -77,6 +78,7 @@ export default function ProjectPage() {
   const { id = "" } = useParams();
   const now = useNow();
   const [busy, setBusy] = useState<Action | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -129,6 +131,20 @@ export default function ProjectPage() {
     }
   }
 
+  async function cancelRun() {
+    if (!window.confirm("Stop this project? Its unfinished tasks will fail; \"Run again\" continues later.")) return;
+    setCancelling(true);
+    setActionError(null);
+    try {
+      await cancelProject(id);
+      await refresh();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   if (loading) return <p className="text-sm text-muted">Loading the project...</p>;
   if (!data) {
     return (
@@ -145,6 +161,8 @@ export default function ProjectPage() {
   const hasTasks = tasks.length > 0;
   const hasAssignments = tasks.some((t) => t.assigned_agent_id);
   const running = tasks.some((t) => t.status === "in_progress") || ["decomposing", "integrating"].includes(project.status);
+  // A run can be stopped while tasks run or wait to be sent (not while decomposing).
+  const stoppable = tasks.some((t) => t.status === "in_progress") || ["in_progress", "integrating"].includes(project.status);
   const next = nextStep(project, tasks, acceptance);
   const results = [...latest.values()];
   const totalTokens = results.reduce((sum, r) => sum + r.tokens_used, 0);
@@ -188,6 +206,11 @@ export default function ProjectPage() {
           {next.action && (
             <button onClick={() => act(next.action!)} disabled={busy !== null || running} className="btn btn-primary">
               {busy === next.action ? "Working..." : next.button}
+            </button>
+          )}
+          {stoppable && (
+            <button onClick={cancelRun} disabled={cancelling} className="btn btn-danger" title="Stops the run; unfinished tasks fail">
+              {cancelling ? "Stopping..." : "■ Cancel run"}
             </button>
           )}
           <details className="relative">

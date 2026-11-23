@@ -19,6 +19,8 @@ Endpoints to add (paths are relative to /api/v1, see docs/contracts/PROJECT_CONT
     GET  /projects/{id}/results                       -> 200 list[TaskResult]
     GET  /projects/{id}/files                         -> 200 list[str]
     GET  /projects/{id}/files/{path}                  -> 200 text, 404
+    POST /projects/{id}/cancel                        -> 200 Project, 409  (Sprint 3)
+        Stops the run (core/orchestrator.cancel): unfinished tasks fail.
     POST /projects/{id}/preview                       -> 200 {"project_id", "port"}
         Runs the generated application on PREVIEW_PORT (core/preview.py); 409 when
         it has no backend/main.py yet, 502 when it does not start.
@@ -176,3 +178,12 @@ def start_preview(project_id: str) -> dict:
     except preview.PreviewError as exc:
         raise HTTPException(status_code=502, detail=f"The app does not start: {exc}")
     return {"project_id": project_id, "port": port}
+
+
+@router.post("/{project_id}/cancel", response_model=Project)
+def cancel_project(project_id: str) -> Project:
+    """Stop the project's run: unfinished tasks and the project become failed."""
+    _get_project_or_404(project_id)
+    if not orchestrator.cancel(project_id):
+        raise HTTPException(status_code=409, detail="This project is not running")
+    return _get_project_or_404(project_id)

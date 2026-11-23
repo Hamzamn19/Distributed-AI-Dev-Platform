@@ -206,6 +206,7 @@ All paths start with `/api/v1`. Endpoints called by workers need the
 | 3 | `GET /projects/{id}/results` | - | list of TaskResult | frontend |
 | 3 | `GET /projects/{id}/files` | - | list of file paths in `workspace/<project_id>/` | frontend |
 | 3 | `GET /projects/{id}/files/{path}` | - | the file as text; 404; a path outside the project folder is refused | frontend |
+| 3 | `POST /projects/{id}/cancel` | - | 200 Project: the run stops at its next round; unfinished tasks fail with "cancelled by the user", the project fails ("Run again" continues); 409 when it is not running | frontend |
 | 3 | `POST /projects/{id}/preview` | - | 200 `{"project_id", "port"}`: the generated application runs on `PREVIEW_PORT` of the master (one at a time); 409 without a written backend, 502 when it does not start | frontend |
 | 4 | `POST /tasks/{id}/reassign` | - | 200 Task | frontend |
 | 5 | `GET /metrics/agents` | - | time, success rate, tokens per agent | frontend |
