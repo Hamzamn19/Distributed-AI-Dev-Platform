@@ -64,22 +64,22 @@ GUIDE: dict[TaskType, str] = {
         "asks for a change on top of it. Change as little as possible: keep every table, "
         "function name, route, element id and test the other agents wrote, unless the "
         "request itself asks to change them, and make the requested change work with "
-        "them. Return every allowed file complete: the changed files with the change, "
-        "the unchanged files exactly as you got them below."
+        "them. Write ONLY the files the request actually changes, complete with the "
+        "change; the files you do not write stay as they are."
     ),
 }
 
 FILE_START = "=== FILE: {path} ==="
 FILE_END = "=== END FILE ==="
 
-ANSWER_FORMAT = (
+ANSWER_FORMAT_HEAD = (
     "Answer in exactly this format, with nothing before or after it:\n"
     "SUMMARY: one sentence about what you wrote\n"
     f"{FILE_START.format(path='<one of the allowed paths>')}\n"
     "<the whole file, exactly as it is saved>\n"
-    f"{FILE_END}\n"
-    "Write one FILE block for every allowed path."
+    f"{FILE_END}"
 )
+ANSWER_FORMAT = f"{ANSWER_FORMAT_HEAD}\nWrite one FILE block for every allowed path."
 
 
 def template_text(path: str) -> str:
@@ -93,19 +93,26 @@ def build_messages(payload: DapTaskPayload) -> list[dict]:
     # A revision task starts from the files the agents already wrote, not from the
     # template: the templates would only tempt the model to start over.
     revision = payload.type == TaskType.REVISION
+    answer_format = (
+        "Write one FILE block for each file you change, at least one."
+        if revision else
+        "Write one FILE block for every allowed path."
+    )
     system = (
         f"You are the {payload.type.value} developer in a team of AI agents that builds "
         "one web application together. Each agent writes only its own files.\n"
         f"{GUIDE.get(payload.type, 'Write the files of your task.')}\n"
-        f"You may write only these files: {allowed}. Write every one of them completely.\n"
+        f"You may write only these files: {allowed}.\n"
         + ("The task description carries the follow-up request: apply exactly that "
            "change, and keep the rest of the application as it is.\n"
            if revision else
            "The task description is a short summary: your files must cover every record, "
-           "field, rule and action of the whole requirement for your part.\n")
+           "field, rule and action of the whole requirement for your part. Write every "
+           "one of your files completely.\n")
         + "Rules for the files:\n"
         + ("- Start from the current files below: change only what the request needs "
-           "and keep the rest exactly as it is.\n"
+           "and keep the rest exactly as it is. Do not rewrite a file that the request "
+           "does not touch.\n"
            if revision else
            "- Start from the template: keep its import lines, the parts it marks as ready or "
            "required (for example the last line of backend/main.py), and follow its comments.\n")
@@ -117,7 +124,7 @@ def build_messages(payload: DapTaskPayload) -> list[dict]:
         "JSON, no escaping.\n"
         "- Do not explain and do not plan in text: answer at once with the SUMMARY line "
         "and the FILE blocks.\n"
-        f"{ANSWER_FORMAT}"
+        f"{ANSWER_FORMAT_HEAD}\n{answer_format}"
     )
     parts = [
         f"Requirement of the application:\n{payload.requirement_text.strip()}",

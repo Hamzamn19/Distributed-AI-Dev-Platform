@@ -19,6 +19,7 @@ Stop with Ctrl+C.
 
 import argparse
 import logging
+import os
 import threading
 import time
 from collections.abc import Callable
@@ -125,6 +126,11 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
 
     load_env(args.env_file)
+    # A revision task sends the whole generated application to the model; on a
+    # worker PC that answer takes minutes (the master's decomposition is short,
+    # so its own default of 120 s stays). Nothing set means the documented 600.
+    if not os.getenv("LLM_TIMEOUT_SEC"):
+        os.environ["LLM_TIMEOUT_SEC"] = "600"
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
     from dap.worker.executor import Executor  # after load_env: reads LLM_* settings
 

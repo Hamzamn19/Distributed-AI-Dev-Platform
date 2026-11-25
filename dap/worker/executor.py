@@ -47,7 +47,7 @@ from collections.abc import Callable
 from datetime import datetime, timezone
 from html.parser import HTMLParser
 
-from dap.shared.enums import A2ATaskState, AgentStatus
+from dap.shared.enums import A2ATaskState, AgentStatus, TaskType
 from dap.shared.llm_client import chat
 from dap.shared.schemas import (
     A2ATask,
@@ -100,7 +100,8 @@ def clean_content(text: str) -> str:
 
 
 def check_output(payload: DapTaskPayload, output: DapTaskOutput) -> None:
-    """Exactly the target files, none empty, Python that compiles. Raises ValueError."""
+    """Exactly the target files (a revision: at least one of them), none empty,
+    Python that compiles. Raises ValueError."""
     allowed = set(payload.target_files)
     written = [file.path for file in output.files]
     outside = [path for path in written if path not in allowed]
@@ -108,9 +109,17 @@ def check_output(payload: DapTaskPayload, output: DapTaskOutput) -> None:
         raise ValueError(f"file outside target_files: {', '.join(outside)}. Write only "
                          f"{', '.join(payload.target_files)}: the other files belong to "
                          "other agents and stay as they are")
-    missing = [path for path in payload.target_files if path not in written]
-    if missing:
-        raise ValueError(f"the model did not write: {', '.join(missing)}")
+    if payload.type == TaskType.REVISION:
+        # A follow-up changes only what the request needs: the unchanged files stay
+        # as they are on disk, so the model does not have to repeat thousands of
+        # tokens it already got (and a small model starts losing files when it must).
+        if not written:
+            raise ValueError("the model did not write any file: apply the request to at "
+                             f"least one of {', '.join(payload.target_files)}")
+    else:
+        missing = [path for path in payload.target_files if path not in written]
+        if missing:
+            raise ValueError(f"the model did not write: {', '.join(missing)}")
     for file in output.files:
         if not file.content.strip():
             raise ValueError(f"empty file: {file.path}")
