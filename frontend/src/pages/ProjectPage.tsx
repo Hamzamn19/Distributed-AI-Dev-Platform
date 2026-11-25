@@ -12,6 +12,7 @@ import {
   getProject,
   getResults,
   getTasks,
+  requestFollowup,
   runProject,
 } from "../api/client";
 import type { Project, Task, TaskResult } from "../api/types";
@@ -80,6 +81,8 @@ export default function ProjectPage() {
   const [busy, setBusy] = useState<Action | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [changeText, setChangeText] = useState("");
+  const [sendingChange, setSendingChange] = useState(false);
 
   const load = useCallback(async () => {
     const [project, tasks, agents, results, files] = await Promise.all([
@@ -142,6 +145,25 @@ export default function ProjectPage() {
       setActionError(e instanceof Error ? e.message : String(e));
     } finally {
       setCancelling(false);
+    }
+  }
+
+  async function sendChange() {
+    const instruction = changeText.trim();
+    if (instruction.length < 10) {
+      setActionError("Describe the change in at least 10 characters.");
+      return;
+    }
+    setSendingChange(true);
+    setActionError(null);
+    try {
+      await requestFollowup(id, instruction);
+      setChangeText("");
+      await refresh();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSendingChange(false);
     }
   }
 
@@ -236,6 +258,31 @@ export default function ProjectPage() {
         )}
         {error && <p className="w-full text-xs text-warn">Connection problem, retrying: {error}</p>}
       </section>
+
+      {project.status === "completed" && (
+        <section className="card p-4 sm:p-5">
+          <p className="text-sm font-semibold text-ink">Request a change</p>
+          <p className="mt-0.5 text-sm text-muted">
+            The agents apply your request to the finished application and run it again (they keep what works).
+          </p>
+          <div className="mt-3 flex flex-col gap-2 sm:flex-row">
+            <input
+              value={changeText}
+              onChange={(e) => setChangeText(e.target.value)}
+              placeholder="e.g. Add a due date to every task and sort the list by it"
+              className="input flex-1"
+              onKeyDown={(e) => e.key === "Enter" && sendChange()}
+            />
+            <button
+              onClick={sendChange}
+              disabled={sendingChange || changeText.trim().length < 10}
+              className="btn btn-primary"
+            >
+              {sendingChange ? "Working..." : "Apply the change"}
+            </button>
+          </div>
+        </section>
+      )}
 
       <div className="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5">
         <Stat label="Tasks done" value={`${done} / ${tasks.length}`} hint={`${tasks.filter((t) => t.status === "failed").length} failed`} tone={done && done === tasks.length ? "ok" : undefined} />

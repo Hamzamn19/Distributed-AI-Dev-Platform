@@ -22,6 +22,7 @@ class TaskType(StrEnum):
     CODE_REVIEW = "code_review"
     INTEGRATION = "integration"
     DOCUMENTATION = "documentation"
+    REVISION = "revision"
 
 
 class TaskStatus(StrEnum):

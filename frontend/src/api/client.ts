@@ -108,6 +108,15 @@ export function cancelProject(id: string): Promise<Project> {
   return request<Project>(`/projects/${id}/cancel`, { method: "POST" });
 }
 
+// Applies a change to the finished application: one revision task, then a run.
+export function requestFollowup(id: string, instruction: string): Promise<Project> {
+  return request<Project>(`/projects/${id}/followup`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction }),
+  });
+}
+
 // Runs the project's generated application on the master; it answers on this port.
 export function startPreview(id: string): Promise<{ project_id: string; port: number }> {
   return request(`/projects/${id}/preview`, { method: "POST" });

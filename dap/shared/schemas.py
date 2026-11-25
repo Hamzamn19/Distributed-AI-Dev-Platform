@@ -92,6 +92,16 @@ class Project(ContractModel):
     updated_at: AwareDatetime
 
 
+class FollowupCreate(ContractModel):
+    """Body of POST /projects/{id}/followup: a change on the finished application.
+
+    The master turns it into one `revision` task over the finished tasks and runs
+    it (Sprint 4; contract sections 8 and 9).
+    """
+
+    instruction: str = Field(min_length=10, max_length=2000)
+
+
 # ------------------------------------------------------------------ tasks
 
 

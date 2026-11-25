@@ -36,6 +36,12 @@ dependencies are done start together (the sender already works that way), and th
 testing task additionally depends on the backend only, so frontend and testing
 run at the same time on different agents. The default stays sequential.
 
+Follow-up requests (Sprint 4): POST /projects/{id}/followup on a completed
+project creates one `revision` task that depends on every finished task, so its
+run delivers the current files to the worker, and starts the run (core/followup.py).
+The run ends with the usual acceptance check and sets the project to completed
+or failed again; "Run again" after a failed revision sends the revision again.
+
 Review note (Baran, S3 adoption of master core and api):
 - The project is completed when the application starts; failed acceptance checks are
   only reported in acceptance.json, they do not fail the project.
@@ -51,7 +57,7 @@ from dataclasses import dataclass, field
 
 from dap.master import a2a_client
 from dap.master.config import get_settings
-from dap.master.core import acceptance, integrator, selector
+from dap.master.core import acceptance, followup, integrator, selector
 from dap.master.db import repositories, results
 from dap.shared.enums import (
     A2A_TO_TASK_STATUS,
@@ -289,7 +295,10 @@ def _send(run: _Run, task: Task) -> None:
     payload = DapTaskPayload(
         task_id=task.id, project_id=run.project_id, type=task.type, title=task.title,
         description=task.description, requirement_text=run.requirement_text,
-        target_files=integrator.TEMPLATE_FILES.get(task.type, []),
+        # A revision task rewrites the application files that exist right now (Sprint 4);
+        # a normal task fills the fixed file of its type (contract section 12).
+        target_files=followup.revision_files(run.project_id)
+        if task.type == TaskType.REVISION else integrator.TEMPLATE_FILES.get(task.type, []),
         dependency_files=_dependency_files(run, task),
     )
     repositories.increment_attempt(task.id)

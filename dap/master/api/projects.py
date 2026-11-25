@@ -24,6 +24,10 @@ Endpoints to add (paths are relative to /api/v1, see docs/contracts/PROJECT_CONT
     POST /projects/{id}/preview                       -> 200 {"project_id", "port"}
         Runs the generated application on PREVIEW_PORT (core/preview.py); 409 when
         it has no backend/main.py yet, 502 when it does not start.
+    POST /projects/{id}/followup  body FollowupCreate -> 202 Project  (Sprint 4)
+        A change on the finished application (core/followup.py): one `revision`
+        task over the finished tasks, then the run starts on its own. 404, 409
+        while a run is going or when the application is not completed.
 
 Status: all endpoints are done. After a successful decompose the project is "in_progress"
 (the enum has no "decomposed"); while the model works it is "decomposing".
@@ -40,10 +44,10 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import PlainTextResponse
 
 from dap.master.config import get_settings
-from dap.master.core import decomposer, integrator, orchestrator, preview, selector
+from dap.master.core import decomposer, followup, integrator, orchestrator, preview, selector
 from dap.master.db import repositories, results
 from dap.shared.enums import ProjectStatus, TaskStatus
-from dap.shared.schemas import Project, ProjectCreate, Task, TaskResult
+from dap.shared.schemas import FollowupCreate, Project, ProjectCreate, Task, TaskResult
 
 logger = logging.getLogger(__name__)
 
@@ -187,3 +191,22 @@ def cancel_project(project_id: str) -> Project:
     if not orchestrator.cancel(project_id):
         raise HTTPException(status_code=409, detail="This project is not running")
     return _get_project_or_404(project_id)
+
+
+@router.post("/{project_id}/followup", response_model=Project, status_code=202)
+def followup_project(project_id: str, body: FollowupCreate) -> Project:
+    """Apply a change to the finished application: one revision task, then a run.
+
+    The tasks endpoint list shows the progress like any run; the revision task is
+    the last one in GET /tasks.
+    """
+    project = _get_project_or_404(project_id)
+    if orchestrator.is_running(project_id):
+        raise HTTPException(status_code=409, detail="This project is running; wait for it to finish")
+    try:
+        followup.create_followup(project_id, body.instruction)
+    except followup.FollowupError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    if not orchestrator.start_run(project_id):
+        raise HTTPException(status_code=409, detail="This project is already running")
+    return project

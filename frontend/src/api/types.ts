@@ -12,7 +12,8 @@ export type TaskType =
   | "testing"
   | "code_review"
   | "integration"
-  | "documentation";
+  | "documentation"
+  | "revision";
 
 export type TaskStatus =
   | "pending"
