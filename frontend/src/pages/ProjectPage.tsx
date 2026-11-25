@@ -10,6 +10,7 @@ import {
   getAgents,
   getFiles,
   getProject,
+  getQueue,
   getResults,
   getTasks,
   requestFollowup,
@@ -93,7 +94,13 @@ export default function ProjectPage() {
       getFiles(id),
     ]);
     const acceptance = files.includes(ACCEPTANCE_FILE) ? await getAcceptance(id) : null;
-    return { project, tasks, agents, results, files, acceptance };
+    let queued: { queued: boolean; position: number | null } = { queued: false, position: null };
+    try {
+      queued = await getQueue(id);
+    } catch {
+      // an older master without the queue endpoint: show nothing
+    }
+    return { project, tasks, agents, results, files, acceptance, queued };
   }, [id]);
   const { data, error, loading, refresh } = usePolling(load);
 
@@ -179,7 +186,7 @@ export default function ProjectPage() {
     );
   }
 
-  const { project, tasks, agents, files, acceptance } = data;
+  const { project, tasks, agents, files, acceptance, queued } = data;
   const hasTasks = tasks.length > 0;
   const hasAssignments = tasks.some((t) => t.assigned_agent_id);
   const running = tasks.some((t) => t.status === "in_progress") || ["decomposing", "integrating"].includes(project.status);
@@ -210,11 +217,32 @@ export default function ProjectPage() {
             <p className="text-sm text-muted">Created {stamp(project.created_at)}</p>
           </div>
           <div className="flex flex-wrap items-start gap-3">
+            {hasApp && (
+              <a
+                href={`/api/v1/projects/${project.id}/export`}
+                download
+                className="btn"
+                title="Download the generated application as one zip"
+              >
+                ⬇ Download app (.zip)
+              </a>
+            )}
             {hasApp && <OpenAppButton projectId={project.id} primary={project.status === "completed"} />}
             <Badge value={project.status} large />
           </div>
         </div>
       </div>
+
+      {queued.queued && (
+        <section className="card p-4 sm:p-5" style={{ borderLeft: "4px solid", borderLeftColor: fg("plan") }}>
+          <p className="text-sm font-semibold text-ink">
+            In the run queue{queued.position ? ` (position ${queued.position})` : ""}
+          </p>
+          <p className="mt-0.5 text-sm text-muted">
+            Every agent is busy right now. The run starts on its own as soon as one is free again.
+          </p>
+        </section>
+      )}
 
       <section className="card flex flex-wrap items-center justify-between gap-4 border-l-4 p-4 sm:p-5" style={{ borderLeftColor: fg(next.tone) }}>
         <div className="min-w-0 max-w-3xl">

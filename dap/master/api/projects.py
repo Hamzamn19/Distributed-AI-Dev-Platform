@@ -23,6 +23,9 @@ Endpoints to add (paths are relative to /api/v1, see docs/contracts/PROJECT_CONT
     GET  /projects/{id}/files/{path}                  -> 200 text, 404
     POST /projects/{id}/cancel                        -> 200 Project, 409  (Sprint 3)
         Stops the run (core/orchestrator.cancel): unfinished tasks fail.
+    GET  /projects/{id}/queue                         -> 200 {"queued", "position"}
+        The project's place in the run queue (Sprint 4); the UI polls it for
+        the 'queued' banner.
     POST /projects/{id}/preview                       -> 200 {"project_id", "port"}
         Runs the generated application on PREVIEW_PORT (core/preview.py); 409 when
         it has no backend/main.py yet, 502 when it does not start.
@@ -215,6 +218,14 @@ def start_preview(project_id: str) -> dict:
     except preview.PreviewError as exc:
         raise HTTPException(status_code=502, detail=f"The app does not start: {exc}")
     return {"project_id": project_id, "port": port}
+
+
+@router.get("/{project_id}/queue")
+def project_queue(project_id: str) -> dict:
+    """Where the project stands in the run queue (the UI's 'queued' banner)."""
+    _get_project_or_404(project_id)
+    return {"queued": orchestrator.is_queued(project_id),
+            "position": orchestrator.queue_position(project_id)}
 
 
 @router.post("/{project_id}/cancel", response_model=Project)

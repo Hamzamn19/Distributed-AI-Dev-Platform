@@ -117,6 +117,11 @@ export function requestFollowup(id: string, instruction: string): Promise<Projec
   });
 }
 
+// The project's place in the run queue (Sprint 4); polled for the queued banner.
+export function getQueue(id: string): Promise<{ queued: boolean; position: number | null }> {
+  return request(`/projects/${id}/queue`);
+}
+
 // Runs the project's generated application on the master; it answers on this port.
 export function startPreview(id: string): Promise<{ project_id: string; port: number }> {
   return request(`/projects/${id}/preview`, { method: "POST" });
