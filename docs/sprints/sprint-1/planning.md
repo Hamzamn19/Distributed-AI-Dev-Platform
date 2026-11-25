@@ -53,3 +53,13 @@ and on the Trello cards.
     one branch per card, one PR per card, no direct pushes to `main`.
   - Roles per card as in the backlog table above (Eray switched from agent list to
     worker/LLM, Can owns the database — recorded in the Oct 12 distribution).
+
+## First draft (moved from the former `docs/sprints/sprint-01.md`)
+
+The first planning draft, written before the 12 October distribution, is kept here
+for the record; the sections above replace it.
+
+- Dates: Oct 5 - Oct 18 (tentative)
+- Sprint Goal (draft): A user can submit a requirement and see it decomposed into
+  persisted tasks in the web UI, on a shared dev/CI foundation.
+- Forecast (draft): proposed 13 cards, 42 points; the team confirms or trims it.

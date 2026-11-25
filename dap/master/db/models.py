@@ -2,10 +2,11 @@
 
 agents: agent_id, name, owner, role_hint, model, provider, cap_coding,
         cap_reasoning, cap_context, status, current_task_id, registered_at,
-        last_heartbeat_at.
+        last_heartbeat_at, a2a_url (Sprint 3).
 projects: id, name, requirement_text, status, created_at, updated_at.
 tasks: id, project_id, title, description, type, status, depends_on,
-       assigned_agent_id, assignment_reason, attempt, created_at, updated_at.
+       assigned_agent_id, assignment_reason, attempt, created_at, updated_at,
+       remote_task_id (Sprint 3: the worker's A2A task id).
 events: id, project_id, task_id, agent_id, type, message, created_at.
 task_results: id, task_id, agent_id, success, summary, files, error,
               duration_ms, tokens_used, created_at.
@@ -56,6 +57,7 @@ class AgentModel(Base):
     current_task_id: Mapped[str | None] = mapped_column(String)
     registered_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     last_heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    a2a_url: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class ProjectModel(Base):
@@ -85,6 +87,7 @@ class TaskModel(Base):
     attempt: Mapped[int] = mapped_column(Integer)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    remote_task_id: Mapped[str | None] = mapped_column(String, nullable=True)
 
 
 class EventModel(Base):

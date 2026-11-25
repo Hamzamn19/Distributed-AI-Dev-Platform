@@ -43,6 +43,7 @@ def _agent(record: AgentModel) -> Agent:
         current_task_id=record.current_task_id,
         registered_at=_utc(record.registered_at),
         last_heartbeat_at=_utc(record.last_heartbeat_at),
+        a2a_url=record.a2a_url,
     )
 
 
@@ -84,6 +85,10 @@ def upsert_agent(data: AgentRegister) -> Agent:
             session.add(record)
         for field in ("name", "owner", "role_hint", "model", "provider"):
             setattr(record, field, getattr(data, field))
+        # A registration without an A2A address (scripts/seed_agents.py) keeps the address
+        # a running worker gave; otherwise the master could no longer send it tasks.
+        if data.a2a_url or record.a2a_url is None:
+            record.a2a_url = data.a2a_url
         record.cap_coding = data.capabilities.coding
         record.cap_reasoning = data.capabilities.reasoning
         record.cap_context = data.capabilities.context
@@ -174,7 +179,11 @@ def set_project_status(project_id: str, status: ProjectStatus) -> None:
 
 
 def create_tasks(project_id: str, tasks: list[TaskCreate]) -> list[Task]:
-    """Store a complete batch or roll it back; task IDs come from the master."""
+    """Store a complete batch or roll it back; task IDs come from the master.
+
+    Each task gets a created_at one microsecond after the previous one, so
+    list_tasks returns them in the order the decomposer produced them.
+    """
     now = datetime.now(timezone.utc)
     with SessionLocal.begin() as session:
         if session.get(ProjectModel, project_id) is None:
@@ -191,10 +200,10 @@ def create_tasks(project_id: str, tasks: list[TaskCreate]) -> list[Task]:
                 assigned_agent_id=None,
                 assignment_reason=None,
                 attempt=0,
-                created_at=now,
-                updated_at=now,
+                created_at=now + timedelta(microseconds=position),
+                updated_at=now + timedelta(microseconds=position),
             )
-            for data in tasks
+            for position, data in enumerate(tasks)
         ]
         session.add_all(records)
         session.flush()
@@ -232,16 +241,29 @@ def assign_task(task_id: str, agent_id: str, reason: str) -> Task:
         return _task(record)
 
 
-def retry_task(task_id: str) -> Task:
-    """Contract section 6: a failed task returns to pending with attempt + 1."""
+def set_task_status(
+    task_id: str, status: TaskStatus, remote_task_id: str | None = None
+) -> Task:
+    """Change a task's status; remote_task_id (the worker's A2A task id) is kept when None."""
     with SessionLocal.begin() as session:
         record = session.get(TaskModel, task_id)
         if record is None:
             raise ValueError(f"Task {task_id!r} does not exist")
-        record.status = TaskStatus.PENDING
+        record.status = TaskStatus(status)
+        if remote_task_id is not None:
+            record.remote_task_id = remote_task_id
+        record.updated_at = datetime.now(timezone.utc)
+        session.flush()
+        return _task(record)
+
+
+def increment_attempt(task_id: str) -> Task:
+    """Count one more execution attempt of a task (the master calls it before sending)."""
+    with SessionLocal.begin() as session:
+        record = session.get(TaskModel, task_id)
+        if record is None:
+            raise ValueError(f"Task {task_id!r} does not exist")
         record.attempt += 1
-        record.assigned_agent_id = None
-        record.assignment_reason = None
         record.updated_at = datetime.now(timezone.utc)
         session.flush()
         return _task(record)

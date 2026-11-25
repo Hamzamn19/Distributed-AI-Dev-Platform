@@ -16,6 +16,10 @@ class MasterSettings:
     database_url: str
     cors_origins: list[str]
     heartbeat_timeout_sec: int
+    task_timeout_sec: int
+    a2a_poll_interval_sec: float
+    run_mode: str  # "sequential" (default) or "parallel"
+    preview_port: int  # where "Open the app" runs a generated application
 
 
 def get_settings() -> MasterSettings:
@@ -27,4 +31,11 @@ def get_settings() -> MasterSettings:
         database_url=os.getenv("DATABASE_URL", "sqlite:///./data/dap.db"),
         cors_origins=[o.strip() for o in origins.split(",") if o.strip()],
         heartbeat_timeout_sec=int(os.getenv("HEARTBEAT_TIMEOUT_SEC", "30")),
+        task_timeout_sec=int(os.getenv("TASK_TIMEOUT_SEC", "900")),
+        a2a_poll_interval_sec=float(os.getenv("A2A_POLL_INTERVAL_SEC", "3")),
+        # parallel: tasks whose dependencies are done start together; the testing task
+        # depends on the backend only (the generated tests hit the API, not the UI),
+        # so frontend and testing run at the same time on different agents.
+        run_mode=os.getenv("RUN_MODE", "sequential").strip().lower(),
+        preview_port=int(os.getenv("PREVIEW_PORT", "8100")),
     )

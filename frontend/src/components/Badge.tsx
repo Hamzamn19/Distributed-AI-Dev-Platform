@@ -1,26 +1,18 @@
-// A status label that shows both a colour and a text (never colour alone).
-const COLORS: Record<string, string> = {
-  // agents
-  idle: "bg-emerald-100 text-emerald-700",
-  busy: "bg-amber-100 text-amber-700",
-  offline: "bg-slate-200 text-slate-600",
-  // projects
-  created: "bg-slate-100 text-slate-600",
-  decomposing: "bg-amber-100 text-amber-700",
-  integrating: "bg-amber-100 text-amber-700",
-  // tasks (and projects)
-  pending: "bg-slate-100 text-slate-600",
-  assigned: "bg-violet-100 text-violet-700",
-  in_progress: "bg-amber-100 text-amber-700",
-  completed: "bg-emerald-100 text-emerald-700",
-  failed: "bg-red-100 text-red-700",
-};
+import { Dot, fg, soft, statusInfo } from "./ui";
 
-export default function Badge({ value }: { value: string }) {
-  const color = COLORS[value] ?? "bg-slate-100 text-slate-600";
+// A status label: a dot, a plain word and, on hover, what it means.
+export default function Badge({ value, large = false }: { value: string; large?: boolean }) {
+  const { tone, label, hint } = statusInfo(value);
   return (
-    <span className={`inline-block whitespace-nowrap rounded-full px-3 py-1 text-sm font-medium ${color}`}>
-      ● {value.replace("_", " ")}
+    <span
+      title={hint}
+      className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full font-medium ${
+        large ? "px-3 py-1 text-sm" : "px-2.5 py-0.5 text-xs"
+      }`}
+      style={{ color: fg(tone), background: soft(tone) }}
+    >
+      <Dot status={value} />
+      {label}
     </span>
   );
 }

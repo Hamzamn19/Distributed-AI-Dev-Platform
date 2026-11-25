@@ -167,3 +167,15 @@ def test_assign_twice_does_not_reassign(monkeypatch):
     second = client.post(f"/api/v1/projects/{project['id']}/assign").json()
     key = lambda t: t["id"]
     assert sorted(first, key=key) == sorted(second, key=key)
+
+
+def test_assign_skips_agents_without_a_recent_heartbeat(monkeypatch):
+    from dap.master.db import repositories
+
+    _register("stale-a", 90, 90, 90)
+    monkeypatch.setenv("HEARTBEAT_TIMEOUT_SEC", "0")  # every heartbeat is now too old
+    pid = _create()["id"]
+    client.post(f"/api/v1/projects/{pid}/decompose")
+    tasks = client.post(f"/api/v1/projects/{pid}/assign").json()
+    assert all(t["assigned_agent_id"] is None and t["status"] == "pending" for t in tasks)
+    assert repositories.get_agent("stale-a").status == "offline"

@@ -1,186 +1,149 @@
-"""Worker loop (card S2-03). Run from the repository root:
+"""Worker program: an A2A server that runs tasks, plus registration and heartbeats.
+
+Owner: Eray - cards S1-07 and Sprint 3.
 
     python -m dap.worker.main
+    python -m dap.worker.main --env-file .env.worker1
 
-Owner: Eray. What it does:
+The A2A server (a2a_server.py) listens on WORKER_HOST:WORKER_PORT; the master
+sends tasks to it. The worker registers with its A2A address (WORKER_PUBLIC_URL,
+or the Tailscale address) and every HEARTBEAT_INTERVAL_SEC sends its status:
+busy with the task id while a task runs or waits, idle otherwise.
 
-1. Registers with the master (waits and tries again while the master is down).
-2. Sends a heartbeat every HEARTBEAT_INTERVAL_SEC from a background thread, so
-   a long model call does not make the agent look offline; on 404 it registers
-   again.
-3. Asks for work every POLL_INTERVAL_SEC (GET /agents/{id}/tasks/next).
-4. Runs a task with the local model (status busy), posts the TaskResult
-   (one retry when the post fails), then goes back to idle.
-5. Ctrl+C stops it cleanly and sends a last heartbeat with status offline.
-
-Settings come only from .env through dap/worker/config.py.
+When the master does not answer as expected:
+- The master is down or unreachable: log it and try again next time.
+- The master answers 404 (it does not know this agent): register again.
+- A wrong AGENT_TOKEN gives 401: log it clearly and keep trying.
+Stop with Ctrl+C.
 """
 
+import argparse
 import logging
 import threading
 import time
+from collections.abc import Callable
 
 import httpx
+import uvicorn
 
 from dap.shared.enums import AgentStatus
-from dap.shared.schemas import Heartbeat, Task, TaskResult
-from dap.worker.config import WorkerSettings, get_settings
-from dap.worker.executor import execute_task
-from dap.worker.master_client import MASTER_ERRORS, AgentNotRegistered, MasterClient, MasterError
+from dap.shared.schemas import Heartbeat
+from dap.worker.config import WorkerSettings, get_settings, load_env, resolve_public_url
 
-log = logging.getLogger("dap.worker")
+API = "/api/v1"
 
-RETRY_WAIT_SEC = 5
-POST_ATTEMPTS = 2
+logger = logging.getLogger("dap.worker")
+
+# Returns the status and current task id the heartbeat reports (idle until Sprint 3).
+StatusSource = Callable[[], tuple[AgentStatus, str | None]]
 
 
-class Worker:
-    def __init__(self, settings: WorkerSettings, client: MasterClient):
-        self.settings = settings
-        self.client = client
-        self.stop = threading.Event()
-        self._lock = threading.Lock()
-        self._status = AgentStatus.IDLE
-        self._task_id: str | None = None
+def _idle() -> tuple[AgentStatus, str | None]:
+    return AgentStatus.IDLE, None
 
-    # --- state shared with the heartbeat thread ---------------------------
 
-    def _set_state(self, status: AgentStatus, task_id: str | None) -> None:
-        with self._lock:
-            self._status, self._task_id = status, task_id
+def _headers(settings: WorkerSettings) -> dict[str, str]:
+    return {"X-Agent-Token": settings.agent_token}
 
-    def _heartbeat_body(self) -> Heartbeat:
-        with self._lock:
-            return Heartbeat(status=self._status, current_task_id=self._task_id)
 
-    # --- registration and heartbeat ---------------------------------------
+def register(client: httpx.Client, settings: WorkerSettings, a2a_url: str | None = None) -> None:
+    """POST /agents/register; raises httpx.HTTPError when it does not succeed."""
+    body = settings.to_register_payload(a2a_url).model_dump(mode="json")
+    response = client.post(f"{API}/agents/register", json=body, headers=_headers(settings))
+    response.raise_for_status()
 
-    def register(self) -> None:
-        """Register; keep trying while the master cannot be reached."""
-        while not self.stop.is_set():
-            try:
-                self.client.register(self.settings.to_register_payload())
-                log.info("registered as %s at %s", self.settings.agent_id, self.settings.master_url)
-                return
-            except (*MASTER_ERRORS, ValueError) as exc:
-                log.warning("master not reachable (%s); trying again in %s s", exc, RETRY_WAIT_SEC)
-                self.stop.wait(RETRY_WAIT_SEC)
 
-    def heartbeat_once(self) -> None:
+def send_heartbeat(
+    client: httpx.Client,
+    settings: WorkerSettings,
+    status: AgentStatus,
+    current_task_id: str | None,
+) -> bool:
+    """POST the heartbeat. False when the master does not know this agent (404)."""
+    body = Heartbeat(status=status, current_task_id=current_task_id).model_dump(mode="json")
+    response = client.post(
+        f"{API}/agents/{settings.agent_id}/heartbeat", json=body, headers=_headers(settings)
+    )
+    if response.status_code == 404:
+        return False
+    response.raise_for_status()
+    return True
+
+
+def run(
+    client: httpx.Client,
+    settings: WorkerSettings,
+    stop: threading.Event,
+    status: StatusSource = _idle,
+    a2a_url: str | None = None,
+) -> None:
+    """Register, then send a heartbeat every interval until stop is set."""
+    registered = False
+    while not stop.is_set():
         try:
-            if not self.client.send_heartbeat(self.settings.agent_id, self._heartbeat_body()):
-                log.warning("master does not know this agent (404); registering again")
-                self.register()
-        except MASTER_ERRORS as exc:
-            log.warning("heartbeat failed: %s", exc)
-
-    def _heartbeat_loop(self) -> None:
-        while not self.stop.wait(self.settings.heartbeat_interval_sec):
-            self.heartbeat_once()
-
-    # --- tasks ---------------------------------------------------------------
-
-    def _post_result(self, result: TaskResult) -> Task | None:
-        for attempt in range(1, POST_ATTEMPTS + 1):
-            try:
-                return self.client.post_result(result)
-            except MasterError as exc:
-                code = exc.status_code
-                if result.files and (code == 409 or code >= 500):
-                    # The master could not store the files (for example they clash
-                    # with this run's output). Report a failure without files, so
-                    # the master requeues the task instead of leaving it assigned.
-                    detail = exc.text[:200]
-                    log.warning("master refused the files (%s %s); reporting a failure", code, detail)
-                    result = result.model_copy(update={
-                        "success": False, "files": [], "summary": "Task failed",
-                        "error": f"master could not store the files ({code}): {detail}",
-                    })
-                    continue
-                if code < 500:
-                    log.warning("master refused the result: %s", exc)
-                    return None
-                log.warning("posting the result failed (attempt %s): %s", attempt, exc)
-                if attempt < POST_ATTEMPTS:
-                    self.stop.wait(RETRY_WAIT_SEC)
-            except MASTER_ERRORS as exc:
-                log.warning("posting the result failed (attempt %s): %s", attempt, exc)
-                if attempt < POST_ATTEMPTS:
-                    self.stop.wait(RETRY_WAIT_SEC)
-        return None
-
-    def run_task(self, task: Task) -> Task | None:
-        log.info("task %s (%s): %s", task.id, task.type, task.title)
-        self._set_state(AgentStatus.BUSY, task.id)
-        self.heartbeat_once()  # tell the master right away that this agent is busy
-        try:
-            project = None
-            try:
-                project = self.client.get_project(task.project_id)
-            except MASTER_ERRORS:
-                pass  # the task can still run without the requirement text
-            result = execute_task(task, self.settings.agent_id,
-                                  project.requirement_text if project else None)
-            if result.success:
-                log.info("done: %s file(s), %s tokens, %s ms",
-                         len(result.files), result.tokens_used, result.duration_ms)
-            else:
-                log.warning("task failed: %s", result.error)
-            updated = self._post_result(result)
-            if updated is not None:
-                log.info("master says task %s is %s", updated.id, updated.status)
-            return updated
-        finally:
-            self._set_state(AgentStatus.IDLE, None)
-            self.heartbeat_once()
-
-    def poll_once(self) -> Task | None:
-        """Ask for one task and run it. Returns the master's answer for that task."""
-        try:
-            task = self.client.next_task(self.settings.agent_id)
-        except AgentNotRegistered:
-            log.warning("master does not know this agent (404); registering again")
-            self.register()
-            return None
-        except MASTER_ERRORS as exc:
-            log.warning("asking for work failed: %s", exc)
-            return None
-        return self.run_task(task) if task else None
-
-    def run(self) -> None:
-        self.register()
-        self.heartbeat_once()
-        beat = threading.Thread(target=self._heartbeat_loop, name="heartbeat", daemon=True)
-        beat.start()
-        log.info("waiting for tasks (poll every %s s, Ctrl+C to stop)", self.settings.poll_interval_sec)
-        while not self.stop.is_set():
-            if self.poll_once() is None:
-                self.stop.wait(self.settings.poll_interval_sec)
-
-    def shutdown(self) -> None:
-        self.stop.set()
-        try:
-            self.client.send_heartbeat(self.settings.agent_id,
-                                       Heartbeat(status=AgentStatus.OFFLINE, current_task_id=None))
-        except MASTER_ERRORS:
-            pass
-        self.client.close()
+            if not registered:
+                register(client, settings, a2a_url)
+                registered = True
+                logger.info("Registered %s with %s", settings.agent_id, settings.master_url)
+            elif not send_heartbeat(client, settings, *status()):
+                logger.warning("The master does not know %s; registering again", settings.agent_id)
+                registered = False
+                continue
+        except httpx.HTTPStatusError as exc:
+            detail = exc.response.text
+            if exc.response.status_code == 401:
+                detail = "wrong AGENT_TOKEN (it must be the same as on the master)"
+            logger.error("Master answered %s: %s", exc.response.status_code, detail)
+        except httpx.HTTPError as exc:
+            logger.warning("Cannot reach the master at %s: %s", settings.master_url, exc)
+        stop.wait(settings.heartbeat_interval_sec)
 
 
-def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s",
-                        datefmt="%H:%M:%S")
-    for noisy in ("httpx", "httpx2", "openai"):  # one line per request is too much
-        logging.getLogger(noisy).setLevel(logging.WARNING)
+def start_a2a_server(settings: WorkerSettings, executor, public_url: str) -> uvicorn.Server:
+    """Run the A2A server in a background thread; stop the program if the port is taken."""
+    from dap.worker.a2a_server import create_app
+
+    app = create_app(settings, executor, public_url)
+    server = uvicorn.Server(uvicorn.Config(
+        app, host=settings.worker_host, port=settings.worker_port, log_level="warning"))
+    thread = threading.Thread(target=server.run, name="a2a-server", daemon=True)
+    thread.start()
+    for _ in range(100):  # up to 10 s
+        if server.started:
+            return server
+        if not thread.is_alive():
+            break
+        time.sleep(0.1)
+    raise SystemExit(
+        f"The A2A server could not start on {settings.worker_host}:{settings.worker_port}. "
+        "Is another worker using this port? Set a different WORKER_PORT in the env file.")
+
+
+def main(argv: list[str] | None = None) -> None:
+    parser = argparse.ArgumentParser(prog="dap.worker.main")
+    parser.add_argument("--env-file", help="read this file instead of .env")
+    args = parser.parse_args(argv)
+
+    load_env(args.env_file)
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    from dap.worker.executor import Executor  # after load_env: reads LLM_* settings
+
     settings = get_settings()
-    worker = Worker(settings, MasterClient(settings.api_url, settings.agent_token))
-    try:
-        worker.run()
-    except KeyboardInterrupt:
-        log.info("Ctrl+C: stopping")
-    finally:
-        worker.shutdown()
-        log.info("stopped")
+    public_url = resolve_public_url(settings)
+    executor = Executor()
+    server = start_a2a_server(settings, executor, public_url)
+    logger.info("Worker %s (%s): A2A server on %s:%s, public address %s, master %s",
+                settings.agent_id, settings.model, settings.worker_host, settings.worker_port,
+                public_url, settings.master_url)
+
+    stop = threading.Event()
+    with httpx.Client(base_url=settings.master_url, timeout=10) as client:
+        try:
+            run(client, settings, stop, status=executor.status, a2a_url=public_url)
+        except KeyboardInterrupt:
+            stop.set()
+            server.should_exit = True
+            logger.info("Worker stopped")
 
 
 if __name__ == "__main__":

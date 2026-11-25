@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Distributed AI Development Platform</title>
+    <script>
+      // The theme before the first paint (src/lib/theme.ts keeps it afterwards).
+      try {
+        var t = localStorage.getItem("dap-theme");
+        var dark = t === "dark" || (t !== "light" && matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.dataset.theme = dark ? "dark" : "light";
+      } catch (e) {
+        document.documentElement.dataset.theme = "light";
+      }
+    </script>
+    <script type="module" crossorigin src="/assets/index-CUe4etFq.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-pXab3694.css">
+  </head>
+  <body>
+    <div id="root"></div>
+  </body>
+</html>

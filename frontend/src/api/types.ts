@@ -1,6 +1,6 @@
 // Mirror of dap/shared/enums.py and dap/shared/schemas.py.
 // Field names stay snake_case: do not convert them to camelCase.
-// Change this file only together with docs/PROJECT_CONTRACT.md.
+// Change this file only together with docs/contracts/PROJECT_CONTRACT.md.
 
 export type AgentStatus = "idle" | "busy" | "offline";
 
@@ -47,11 +47,12 @@ export interface Agent {
   current_task_id: string | null;
   registered_at: string; // ISO 8601, UTC
   last_heartbeat_at: string | null;
+  a2a_url: string | null; // worker's A2A server, e.g. http://100.x.y.z:9000
 }
 
 export interface ProjectCreate {
   name: string;
-  requirement_text: string; // at least 20 characters, otherwise HTTP 422
+  requirement_text: string; // 20 to 12 000 characters, otherwise HTTP 422
 }
 
 export interface Project {
@@ -76,6 +77,30 @@ export interface Task {
   attempt: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface GeneratedFile {
+  path: string;
+  content: string;
+}
+
+// One stored result of a task (GET /projects/{id}/results).
+export interface TaskResult {
+  task_id: string;
+  agent_id: string;
+  success: boolean;
+  summary: string;
+  files: GeneratedFile[];
+  error: string | null;
+  duration_ms: number;
+  tokens_used: number;
+}
+
+// The part of a worker's A2A agent card the UI uses (camelCase: A2A wire format).
+export interface AgentCard {
+  name: string;
+  description: string;
+  version: string;
 }
 
 export interface HealthResponse {

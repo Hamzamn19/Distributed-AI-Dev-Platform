@@ -1,0 +1,9 @@
+Master on http://127.0.0.1:36353, workers on (9001, 9002), temporary files in /tmp/dap-e2e-real-emix05t4
+ok  master started
+ok  two workers registered and reachable over A2A
+ok  project dcd58d22-9545-462c-a71d-3e2a2d5d6057: 4 tasks decomposed and assigned (decompose took 8 s with gemma4-26b)
+ok  run completed on the workers (131 s, real model)
+ok  workspace/dcd58d22-9545-462c-a71d-3e2a2d5d6057/ has the template files, 4 task commits and the check
+ok  acceptance check: 9 of 9 checks passed
+PROJECT_ID=dcd58d22-9545-462c-a71d-3e2a2d5d6057
+E2E PASSED

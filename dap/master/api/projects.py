@@ -2,7 +2,7 @@
 
 Owner: Baran - cards S1-05 and S1-06.
 
-Endpoints to add (paths are relative to /api/v1, see docs/PROJECT_CONTRACT.md):
+Endpoints to add (paths are relative to /api/v1, see docs/contracts/PROJECT_CONTRACT.md):
 
     POST /projects                 body ProjectCreate -> 201 Project      (S1-05)
         A missing or too short requirement_text gives 422 automatically.
@@ -14,6 +14,16 @@ Endpoints to add (paths are relative to /api/v1, see docs/PROJECT_CONTRACT.md):
     POST /projects/{id}/assign                        -> 200 list[Task]    (S1-06)
         Calls dap.master.core.selector; fills assigned_agent_id and
         assignment_reason.
+    POST /projects/{id}/run                           -> 202 Project, 409  (Sprint 3)
+        Starts dap.master.core.orchestrator in a background thread.
+    GET  /projects/{id}/results                       -> 200 list[TaskResult]
+    GET  /projects/{id}/files                         -> 200 list[str]
+    GET  /projects/{id}/files/{path}                  -> 200 text, 404
+    POST /projects/{id}/cancel                        -> 200 Project, 409  (Sprint 3)
+        Stops the run (core/orchestrator.cancel): unfinished tasks fail.
+    POST /projects/{id}/preview                       -> 200 {"project_id", "port"}
+        Runs the generated application on PREVIEW_PORT (core/preview.py); 409 when
+        it has no backend/main.py yet, 502 when it does not start.
 
 Status: all endpoints are done. After a successful decompose the project is "in_progress"
 (the enum has no "decomposed"); while the model works it is "decomposing".
@@ -27,11 +37,13 @@ Rules:
 import logging
 
 from fastapi import APIRouter, HTTPException
+from fastapi.responses import PlainTextResponse
 
-from dap.master.core import decomposer, selector
-from dap.master.db import repositories
+from dap.master.config import get_settings
+from dap.master.core import decomposer, integrator, orchestrator, preview, selector
+from dap.master.db import repositories, results
 from dap.shared.enums import ProjectStatus, TaskStatus
-from dap.shared.schemas import Project, ProjectCreate, Task
+from dap.shared.schemas import Project, ProjectCreate, Task, TaskResult
 
 logger = logging.getLogger(__name__)
 
@@ -93,6 +105,8 @@ def assign_project(project_id: str) -> list[Task]:
     if not tasks:
         raise HTTPException(status_code=409, detail="Project has no tasks; decompose it first")
 
+    # An agent without a recent heartbeat must not get work (contract section 8).
+    repositories.mark_stale_agents_offline(get_settings().heartbeat_timeout_sec)
     agents = repositories.list_agents()
     by_id = {task.id: task for task in tasks}
     done: set[str] = set()
@@ -119,3 +133,57 @@ def assign_project(project_id: str) -> list[Task]:
         agent, reason = choice
         repositories.assign_task(task.id, agent.agent_id, reason)
     return repositories.list_tasks(project_id)
+
+
+@router.post("/{project_id}/run", response_model=Project, status_code=202)
+def run_project(project_id: str) -> Project:
+    """Send the assigned tasks to the workers over A2A; follow /tasks for the progress."""
+    _get_project_or_404(project_id)
+    if not repositories.list_tasks(project_id):
+        raise HTTPException(status_code=409, detail="Project has no tasks; decompose it first")
+    if not orchestrator.start_run(project_id):
+        raise HTTPException(status_code=409, detail="This project is already running")
+    return _get_project_or_404(project_id)
+
+
+@router.get("/{project_id}/results", response_model=list[TaskResult])
+def list_results(project_id: str) -> list[TaskResult]:
+    _get_project_or_404(project_id)
+    return results.list_project_results(project_id)
+
+
+@router.get("/{project_id}/files", response_model=list[str])
+def list_files(project_id: str) -> list[str]:
+    _get_project_or_404(project_id)
+    return integrator.list_files(project_id)
+
+
+@router.get("/{project_id}/files/{path:path}", response_class=PlainTextResponse)
+def read_file(project_id: str, path: str) -> str:
+    _get_project_or_404(project_id)
+    try:
+        return integrator.read_file(project_id, path)
+    except (ValueError, FileNotFoundError):
+        raise HTTPException(status_code=404, detail=f"File {path!r} not found")
+
+
+@router.post("/{project_id}/preview")
+def start_preview(project_id: str) -> dict:
+    """Run the project's generated application; the UI opens http://<master>:<port>/."""
+    _get_project_or_404(project_id)
+    try:
+        port = preview.start(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=409, detail=f"Cannot open the app: {exc}")
+    except preview.PreviewError as exc:
+        raise HTTPException(status_code=502, detail=f"The app does not start: {exc}")
+    return {"project_id": project_id, "port": port}
+
+
+@router.post("/{project_id}/cancel", response_model=Project)
+def cancel_project(project_id: str) -> Project:
+    """Stop the project's run: unfinished tasks and the project become failed."""
+    _get_project_or_404(project_id)
+    if not orchestrator.cancel(project_id):
+        raise HTTPException(status_code=409, detail="This project is not running")
+    return _get_project_or_404(project_id)

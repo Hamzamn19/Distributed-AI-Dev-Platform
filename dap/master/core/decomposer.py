@@ -8,12 +8,16 @@ The model is asked for (member guide, agreement 2):
 
     {"tasks": [{"key", "title", "description", "type", "depends_on"}]}
 
-"key" is a temporary name inside the answer and "depends_on" lists keys. Every
-task gets a UUID4 here and the keys in depends_on are translated to those ids.
+"key" is a temporary name inside the answer. Every task gets a UUID4 here.
 
-Rules:
-- Only the Sprint 1 types are accepted (SPRINT1_TASK_TYPES), and each of them
-  must appear at least once.
+Rules (Sprint 3, contract section 12):
+- Exactly one task of each Sprint 1 type (SPRINT1_TASK_TYPES); each fills fixed
+  template files, so two tasks of one type would overwrite each other.
+- The order and the dependencies are fixed here, whatever the model answered:
+  database -> backend -> frontend -> testing (testing also depends on backend).
+  The model writes the titles and descriptions for the requirement.
+- The model also lists the records of the requirement ("records", optional);
+  every description then ends with that list, so each task builds all records.
 - A broken answer is retried once; after that a fixed template with one task
   per type is returned.
 - When the model cannot be reached, chat() raises RuntimeError. It is not
@@ -33,20 +37,46 @@ logger = logging.getLogger(__name__)
 
 ATTEMPTS = 2  # first answer + one retry
 
+# Fixed order and dependencies of the four Sprint 3 tasks (contract section 12).
+ORDER = [TaskType.DATABASE, TaskType.BACKEND, TaskType.FRONTEND, TaskType.TESTING]
+DEPENDS_ON: dict[TaskType, list[TaskType]] = {
+    TaskType.DATABASE: [],
+    TaskType.BACKEND: [TaskType.DATABASE],
+    TaskType.FRONTEND: [TaskType.BACKEND],
+    TaskType.TESTING: [TaskType.BACKEND, TaskType.FRONTEND],
+}
+
 _TYPE_NAMES = ", ".join(t.value for t in SPRINT1_TASK_TYPES)
 
 SYSTEM_PROMPT = f"""You are the Master Agent of a multi-agent software platform.
 Break the user's software requirement into small, concrete development tasks.
 
 Rules:
-- Every task has exactly one type: {_TYPE_NAMES}.
-- Produce at least one task of each type.
+- First list in "records" every kind of record of the requirement, as plural
+  snake_case table names (for example "customers", "orders").
+- Produce exactly four tasks, one of each type: {_TYPE_NAMES}.
+- The four tasks build one small web application from a fixed template:
+  database = SQLite tables and functions, backend = FastAPI routes under /api,
+  frontend = one HTML page with JavaScript, testing = pytest tests of the API.
+- Every task covers ALL records: never give one record to one task and another
+  record to another task.
+- Write titles and descriptions for THIS requirement, whatever its domain, so each
+  developer builds the same application with the same names:
+  database: every table (plural snake_case) with its columns and links, the
+    business rules (limits, states, checks) and the actions (for example
+    "complete a task", "borrow an item");
+  backend: the /api/<table> routes of every table and one route per action;
+  frontend: one section per table with its form fields and action buttons;
+  testing: the business rules and actions to test (the master itself tries
+    list, create, get, update and delete of every table).
+  Use the same table and field names in all four descriptions.
 - "key" is a short unique name such as "T1".
 - "depends_on" lists the keys of tasks that must finish first
   (database first, then backend, then frontend, testing last).
 - Answer with JSON only, exactly in this shape:
 
 {{
+  "records": ["first_table", "second_table"],
   "tasks": [
     {{"key": "T1", "title": "short title", "description": "what must be done",
       "type": "database", "depends_on": []}}
@@ -111,29 +141,37 @@ def _to_task_creates(data: object) -> list[TaskCreate]:
             raise ValueError(f"duplicate key {key!r}")
         ids[key] = str(uuid.uuid4())
 
-    missing = allowed - {str(raw["type"]).strip().lower() for raw in raw_tasks}
+    types = [str(raw["type"]).strip().lower() for raw in raw_tasks]
+    missing = allowed - set(types)
     if missing:
         raise ValueError(f"missing task types: {', '.join(sorted(missing))}")
+    doubled = sorted({kind for kind in types if types.count(kind) > 1})
+    if doubled:
+        raise ValueError(f"more than one task of type {', '.join(doubled)}; expected one of each")
 
+    # The same record list in every description, so no task builds only some records.
+    records = [str(r).strip() for r in data.get("records") or [] if str(r).strip()][:12]
+    covers = f"\nRecords: {', '.join(records)}. This task covers all of them." if records else ""
+
+    # One task per type, in the fixed order, with the fixed dependencies.
+    by_type = {TaskType(kind): raw for kind, raw in zip(types, raw_tasks)}
+    type_ids = {kind: str(uuid.uuid4()) for kind in ORDER}
     tasks = []
-    for index, raw in enumerate(raw_tasks, start=1):
-        key = str(raw.get("key") or f"T{index}")
-        deps = raw.get("depends_on")
-        deps = deps if isinstance(deps, list) else []
+    for kind in ORDER:
+        raw = by_type[kind]
         title = str(raw["title"]).strip()
         tasks.append(TaskCreate(
-            id=ids[key],
+            id=type_ids[kind],
             title=title,
-            description=str(raw.get("description") or title).strip(),
-            type=TaskType(str(raw["type"]).strip().lower()),
-            # Unknown keys and self-references are dropped instead of failing.
-            depends_on=[ids[str(d)] for d in deps if str(d) in ids and str(d) != key],
+            description=str(raw.get("description") or title).strip() + covers,
+            type=kind,
+            depends_on=[type_ids[dep] for dep in DEPENDS_ON[kind]],
         ))
     return tasks
 
 
 def decompose(requirement_text: str) -> list[TaskCreate]:
-    """Break a requirement into Sprint 1 tasks (frontend, backend, database, testing)."""
+    """Break a requirement into four tasks: database, backend, frontend, testing."""
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Requirement:\n{requirement_text.strip()}"},

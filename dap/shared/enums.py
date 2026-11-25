@@ -1,6 +1,6 @@
 """Shared enum values: the single source of truth for master, worker and database.
 
-Do not rename, add or remove a value without updating docs/PROJECT_CONTRACT.md
+Do not rename, add or remove a value without updating docs/contracts/PROJECT_CONTRACT.md
 first. The frontend mirrors these values in frontend/src/api/types.ts.
 """
 
@@ -39,6 +39,24 @@ class ProjectStatus(StrEnum):
     INTEGRATING = "integrating"
     COMPLETED = "completed"
     FAILED = "failed"
+
+
+class A2ATaskState(StrEnum):
+    """Task states on the A2A wire (protocol v1.0); only the four we use."""
+
+    SUBMITTED = "TASK_STATE_SUBMITTED"
+    WORKING = "TASK_STATE_WORKING"
+    COMPLETED = "TASK_STATE_COMPLETED"
+    FAILED = "TASK_STATE_FAILED"
+
+
+# How the master stores a worker's A2A task state.
+A2A_TO_TASK_STATUS: dict[A2ATaskState, TaskStatus] = {
+    A2ATaskState.SUBMITTED: TaskStatus.IN_PROGRESS,
+    A2ATaskState.WORKING: TaskStatus.IN_PROGRESS,
+    A2ATaskState.COMPLETED: TaskStatus.COMPLETED,
+    A2ATaskState.FAILED: TaskStatus.FAILED,
+}
 
 
 # The Sprint 1 decomposer may only produce these four task types.

@@ -7,6 +7,11 @@ Talks to a local model (Ollama) through the OpenAI-compatible
     LLM_API_KEY    any non-empty text for Ollama, for example "ollama"
     LLM_MODEL      for example qwen3:4b
     LLM_MOCK       1 = no model call, return a fixed valid answer
+    LLM_TIMEOUT_SEC  seconds to wait for one answer (default 120; 600 on worker PCs)
+    LLM_THINK      0 (default) = ask reasoning models (Qwen3, Gemma, ...) not to think
+                   first; their hidden thinking cost minutes and thousands of tokens
+    LLM_MAX_TOKENS most tokens of one answer when the caller gives none (default 8192),
+                   so a runaway answer stops instead of running until the timeout
 
 Contract (docs/contracts/PROJECT_CONTRACT.md, section 8):
 
@@ -28,7 +33,28 @@ from dap.shared.schemas import LLMResponse
 
 load_dotenv()
 
-TIMEOUT_SEC = 120
+DEFAULT_TIMEOUT_SEC = 120
+DEFAULT_MAX_TOKENS = 8192
+# Switches thinking off in llama.cpp's llama-server (Gemma, Qwen3 chat templates).
+# Ollama ignores the field; its models without thinking (qwen2.5, llama3.1) need nothing.
+# For a guarantee start llama-server with --reasoning-budget 0.
+NO_THINKING = {"chat_template_kwargs": {"enable_thinking": False}}
+# Qwen3's own switch, written into the conversation, which Ollama passes on: without
+# it qwen3 on Ollama thinks for minutes and runs out of tokens before the code ends
+# (17 November test: database.py with four of its five functions missing).
+NO_THINK_SWITCH = "/no_think"
+SWITCH_MODELS = ("qwen3",)
+
+
+def _with_switch(messages: list[dict], model: str) -> list[dict]:
+    """The messages with /no_think after the last user message, for Qwen3 models."""
+    users = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+    if not model.lower().startswith(SWITCH_MODELS) or not users:
+        return messages
+    last = users[-1]
+    changed = [dict(m) for m in messages]
+    changed[last]["content"] = f"{changed[last]['content']}\n{NO_THINK_SWITCH}"
+    return changed
 ATTEMPTS = 2  # first try + one retry
 
 MOCK_TEXT = "mock response"
@@ -88,9 +114,21 @@ def strip_think(text: str) -> str:
     return _THINK_BLOCK.sub("", text).strip()
 
 
+def _timeout_sec() -> float:
+    return float(os.getenv("LLM_TIMEOUT_SEC", str(DEFAULT_TIMEOUT_SEC)))
+
+
+def _max_tokens() -> int:
+    return int(os.getenv("LLM_MAX_TOKENS", str(DEFAULT_MAX_TOKENS)))
+
+
+def _thinking() -> bool:
+    return os.getenv("LLM_THINK", "0").strip() == "1"
+
+
 def _client(base_url: str, api_key: str) -> OpenAI:
     # The openai package retries by itself; we do our own single retry instead.
-    return OpenAI(base_url=base_url, api_key=api_key, timeout=TIMEOUT_SEC, max_retries=0)
+    return OpenAI(base_url=base_url, api_key=api_key, timeout=_timeout_sec(), max_retries=0)
 
 
 def chat(
@@ -109,9 +147,11 @@ def chat(
     if not base_url or not model:
         raise RuntimeError("LLM_BASE_URL and LLM_MODEL must be set in .env")
 
-    kwargs: dict = {"model": model, "messages": messages, "temperature": temperature}
-    if max_tokens is not None:
-        kwargs["max_tokens"] = max_tokens
+    kwargs: dict = {"model": model, "messages": messages, "temperature": temperature,
+                    "max_tokens": max_tokens if max_tokens is not None else _max_tokens()}
+    if not _thinking():
+        kwargs["extra_body"] = NO_THINKING
+        kwargs["messages"] = _with_switch(messages, model)
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 

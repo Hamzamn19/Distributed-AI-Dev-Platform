@@ -1,7 +1,8 @@
 # Models and measured capabilities
 
-Card S2-04 (Issue #24), contract section 10. The scores in `docs/agents.json`
-come from this measurement, not from estimates. A model change means measuring
+Card S2-04 (Issue #24), contract section 10. `docs/agents.json` is the source
+of truth for each agent's model and scores; this page shows the same values.
+A measured score replaces the Sprint 1 estimate; a model change means measuring
 again.
 
 ## Method
@@ -147,19 +148,54 @@ are ready), execute it with the local model, and post the file back with
 `POST /api/v1/tasks/{id}/result`. The worker loop that runs this flow is
 Eray's Sprint 2 card; this section is the configuration it will read.
 
-## Results
+## The master's model
 
-| Agent | Model | coding | reasoning | context | Speed (tok/s) | Measured on | Date |
-| --- | --- | --- | --- | --- | --- | --- | --- |
-| agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | 6.0 | Eray-PC | 2026-10-24 |
-| agent-hamza | gemma4-26b-a4b | 100 | 100 | 100 | 89.6 | Hamza-PC | 2026-10-24 |
-| agent-fatma | to be decided | | | | | | |
-| agent-can | to be decided | | | | | | |
-| agent-abdurrahman | to be decided | | | | | | |
-| agent-okan | to be decided | | | | | | |
+The master uses its model only to decompose the requirement into tasks; it is not
+an agent and has no capability scores. The master's model is Gemma 4 26B A4B:
 
-Rows marked `—` were measured before the script printed tokens (21 October);
-re-run them once to fill the speed column.
+| Where | Model name | Runtime | `LLM_BASE_URL` on the master |
+| --- | --- | --- | --- |
+| Baran's PC (the master PC) | `gemma4:26b` | Ollama | `http://localhost:11434/v1` |
+| Tailnet test with Okan as master (29 October) | `gemma-4-26b-a4b-iq2_xxs` (GGUF on Hamza's PC) | llama.cpp `llama-server` | `http://<Hamza's Tailscale IP>:8080/v1` |
+
+Both are the same model (Hamza's file is a smaller quantization of it), so they
+decompose alike. `LLM_THINK=0` keeps it from thinking first: a decomposition then
+takes about 10 seconds. agent-hamza runs the same model as a worker.
+
+## Measured results (five questions)
+
+| Agent | Model | coding | reasoning | context | Speed (tok/s) |
+| --- | --- | --- | --- | --- | --- |
+| agent-eray | qwen2.5-coder:7b | 100 | 50 | 100 | 6.0 |
+| agent-hamza | gemma-4-26b-a4b-iq2_xxs (llama.cpp) | 100 | 100 | 100 | 89.6 |
+| agent-fatma | qwen2.5-coder:3b | 100 | 0 | 100 | 2.1 |
+| agent-can | qwen2.5-coder:7b | 100 | 50 | 100 | 7.4 |
+| agent-abdurrahman | qwen3:4b | 100 | 100 | 100 | 54.2 |
+| agent-okan | qwen2.5-coder:7b-instruct-q3_K_M | 100 | 50 | 100 | 5.9 |
+
+The five questions are too easy to rank these models: every model scores 100 in
+coding and context, and a 4B model ties with the 26B one. With equal scores the
+selection falls back to the role bonus and the agent id, so the strongest model
+(agent-hamza) was hardly ever chosen.
+
+## Scores used (from 17 November 2026)
+
+Same values as `docs/agents.json` and the workers' `AGENT_CAP_*`. They are set from
+the model (contract section 10): its size, whether it is trained for code, its
+quantization and its measured speed (a slow model risks `TASK_TIMEOUT_SEC`). The
+measured reasoning results above are kept where they separate the models.
+
+| Agent | Model | coding | reasoning | context | Why |
+| --- | --- | --- | --- | --- | --- |
+| agent-hamza | gemma-4-26b-a4b-iq2_xxs | 90 | 90 | 90 | 26B mixture of experts, by far the largest and the fastest; 2-bit quantization costs a little |
+| agent-eray | qwen2.5-coder:7b | 80 | 55 | 70 | 7B code model; reasoning measured 50 |
+| agent-can | qwen2.5-coder:7b | 80 | 55 | 70 | same model as agent-eray |
+| agent-okan | qwen2.5-coder:7b-instruct-q3_K_M | 75 | 50 | 65 | same model, stronger (3-bit) quantization |
+| agent-abdurrahman | qwen3:4b | 65 | 75 | 70 | 4B general model, good reasoning (measured 100), fast |
+| agent-fatma | qwen2.5-coder:3b | 55 | 30 | 50 | smallest model, reasoning measured 0, 2.1 tok/s |
+
+With all six online, `/assign` gives database and frontend to agent-hamza, backend
+to agent-eray (role bonus) and testing to agent-abdurrahman (role bonus).
 
 ### Extra run: gemma4-26b-a4b (Hamza-PC, 24 October)
 

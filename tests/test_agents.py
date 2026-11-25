@@ -84,3 +84,43 @@ def test_heartbeat_of_unknown_agent_gives_404():
                            json={"status": "idle"}, headers=_auth())
     assert response.status_code == 404
     assert "detail" in response.json()
+
+
+def test_agent_card_endpoint_reports_whether_the_master_reaches_the_worker(monkeypatch):
+    from dap.master import a2a_client
+    from dap.shared.schemas import AgentCard, AgentInterface
+
+    headers = {"X-Agent-Token": get_settings().agent_token}
+    base = {"name": "W", "owner": "o", "model": "m",
+            "capabilities": {"coding": 1, "reasoning": 1, "context": 1}}
+    client.post("/api/v1/agents/register", headers=headers,
+                json={**base, "agent_id": "card-ok", "a2a_url": "http://w1:9000"})
+    client.post("/api/v1/agents/register", headers=headers,
+                json={**base, "agent_id": "card-none"})
+
+    def fake_card(url):
+        if url == "http://w1:9000":
+            return AgentCard(name="card-ok", description="d", version="0.1.0",
+                             supported_interfaces=[AgentInterface(url=url)])
+        raise a2a_client.A2AError(f"worker at {url} not reachable")
+
+    monkeypatch.setattr(a2a_client, "get_agent_card", fake_card)
+    assert client.get("/api/v1/agents/card-ok/card").json()["name"] == "card-ok"
+    assert client.get("/api/v1/agents/card-none/card").status_code == 404
+    assert client.get("/api/v1/agents/no-such-agent/card").status_code == 404
+    client.post("/api/v1/agents/register", headers=headers,
+                json={**base, "agent_id": "card-down", "a2a_url": "http://w2:9000"})
+    down = client.get("/api/v1/agents/card-down/card")
+    assert down.status_code == 502 and "not reachable" in down.json()["detail"]
+
+
+def test_a_registration_without_address_keeps_the_workers_address():
+    # 23 November: scripts/seed_agents.py registered the team without addresses and the
+    # master could no longer send tasks to the running workers.
+    body = {"agent_id": "keep-addr", "name": "K", "owner": "t", "role_hint": None, "model": "m",
+            "provider": "ollama", "capabilities": {"coding": 1, "reasoning": 1, "context": 1}}
+    headers = {"X-Agent-Token": get_settings().agent_token}
+    client.post("/api/v1/agents/register", headers=headers, json={**body, "a2a_url": "http://w:9000"})
+    client.post("/api/v1/agents/register", headers=headers, json=body)  # no a2a_url
+    agents = {a["agent_id"]: a for a in client.get("/api/v1/agents").json()}
+    assert agents["keep-addr"]["a2a_url"] == "http://w:9000"

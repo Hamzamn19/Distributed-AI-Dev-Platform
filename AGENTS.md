@@ -11,6 +11,16 @@ requirement document into a small web application. One **master** PC plans and
 assigns tasks; six **worker** PCs carry them out with local LLMs. Keep
 everything as simple as a course project allows.
 
+Architecture (contract sections 2 and 13):
+
+- The master serves the web interface and the API on one address,
+  `http://<master>:8000` (`/` is the built `frontend/dist`, `/api/v1/...` the API).
+- Workers register and send heartbeats to the master. The master sends each
+  task to its worker over A2A (the worker's server on port 9000) and asks for
+  its status; workers never pull tasks.
+- The generated application is the template `templates/webapp/` filled in by
+  the agents, written to `workspace/<project_id>/` with one git commit per task.
+
 ## Before you write anything
 
 1. Find out who you are working for. If the user has not said their name, ask.
@@ -91,10 +101,14 @@ If the behaviour of a folder changed, update the "Status" part of its `README.md
 Run everything from the repository root, with the virtual environment active.
 
 ```bash
-pytest                                                             # tests
-uvicorn dap.master.main:app --host 0.0.0.0 --port 8000 --reload    # master
-python -m dap.worker.main                                          # worker
-cd frontend && npm run dev                                         # web interface
+pytest                                                    # tests (no Ollama needed)
+cd frontend && npm install && npm run build && cd ..      # build the web interface
+python -m dap.master                                      # master: UI + API on :8000
+python -m dap.worker.main                                 # worker (reads .env)
+python -m dap.worker.main --env-file .env.worker1         # a second local worker
+python scripts/e2e_local.py                               # whole flow on one PC (mock)
+python scripts/check_connection.py                        # on a worker PC: tailnet checks
+cd frontend && npm run dev                                # UI with hot reload on :5173
 ```
 
-Set `LLM_MOCK=1` in `.env` to run the master without Ollama.
+Set `LLM_MOCK=1` in `.env` to run the master and workers without Ollama.

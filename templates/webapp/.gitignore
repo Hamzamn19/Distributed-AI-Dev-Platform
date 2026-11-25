@@ -1,0 +1,5 @@
+# Runtime files of the generated application, never committed
+app.db
+__pycache__/
+.venv/
+.pytest_cache/
