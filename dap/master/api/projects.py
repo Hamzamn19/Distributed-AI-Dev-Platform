@@ -219,9 +219,9 @@ def live_progress(project_id: str) -> list[dict]:
     live = []
     for task in repositories.list_tasks(project_id):
         if task.status != TaskStatus.IN_PROGRESS:
-            remote_id = repositories.remote_task_id(task.id)
-            if not remote_id:
-                continue
+            continue
+        remote_id = repositories.remote_task_id(task.id)
+        if not remote_id:
             continue
         agent = repositories.get_agent(task.assigned_agent_id)
         if agent is None or not agent.a2a_url:
@@ -233,8 +233,11 @@ def live_progress(project_id: str) -> list[dict]:
             continue  # an unreachable worker shows nothing, it does not fail the page
         if "round" not in progress:
             continue  # the task stopped generating between polls: nothing live to show
-        live.append({"task_id": task.id, "type": task.type.value,
-                     "agent": agent.agent_id, **progress})
+        # the worker's own task_id/state stay out: the UI matches on the master's id
+        live.append({"task_id": task.id, "type": task.type.value, "agent": agent.agent_id,
+                     "round": progress.get("round"),
+                     "generated_tokens": progress.get("generated_tokens"),
+                     "current_file": progress.get("current_file"), "tail": progress.get("tail")})
     return live
 
 

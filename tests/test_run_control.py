@@ -523,7 +523,12 @@ def test_the_master_live_endpoint_proxies_the_worker(db, monkeypatch):
     repositories.assign_task(task.id, "a1", "live")
     repositories.set_task_status(task.id, TaskStatus.IN_PROGRESS, remote_task_id="r1")
     progress = {"round": 1, "type": "revision", "generated_tokens": 120, "tail": "=== FILE: b"}
-    monkeypatch.setattr(a2a_client, "get_progress", lambda url, remote_id, token: progress)
+
+    def fake_get_progress(url, remote_id, token):
+        # the endpoint must ask the worker for THIS task's remote id, not a leftover
+        return progress if remote_id == "r1" else {}
+
+    monkeypatch.setattr(a2a_client, "get_progress", fake_get_progress)
     answer = client.get(f"/api/v1/projects/{pid}/live")
     assert answer.status_code == 200
     (entry,) = answer.json()
