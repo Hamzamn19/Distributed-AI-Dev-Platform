@@ -32,6 +32,8 @@ WEIGHTS: dict[TaskType, tuple[float, float, float]] = {
     TaskType.INTEGRATION: (0.3, 0.3, 0.4),
     TaskType.REQUIREMENTS_ANALYSIS: (0.1, 0.6, 0.3),
     TaskType.DOCUMENTATION: (0.1, 0.4, 0.5),
+    # A revision touches every part of the finished app: balanced weights, from Sprint 4.
+    TaskType.REVISION: (0.4, 0.3, 0.3),
 }
 
 

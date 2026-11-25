@@ -145,7 +145,7 @@ Lowercase strings with underscores. Source of truth: `dap/shared/enums.py`.
 ```text
 AgentStatus:   idle | busy | offline
 TaskType:      requirements_analysis | frontend | backend | database |
-               testing | code_review | integration | documentation
+               testing | code_review | integration | documentation | revision
 TaskStatus:    pending | assigned | in_progress | completed | failed
 ProjectStatus: created | decomposing | in_progress | integrating | completed | failed
 ```
@@ -222,6 +222,7 @@ All paths start with `/api/v1`. Endpoints called by workers need the
 | 3 | `GET /projects/{id}/files/{path}` | - | the file as text; 404; a path outside the project folder is refused | frontend |
 | 3 | `POST /projects/{id}/cancel` | - | 200 Project: the run stops at its next round; unfinished tasks fail with "cancelled by the user", the project fails ("Run again" continues); 409 when it is not running | frontend |
 | 3 | `POST /projects/{id}/preview` | - | 200 `{"project_id", "port"}`: the generated application runs on `PREVIEW_PORT` of the master (one at a time); 409 without a written backend, 502 when it does not start | frontend |
+| 4 | `POST /projects/{id}/followup` | FollowupCreate `{instruction}` | 202 Project: one `revision` task over the finished tasks is created and run right away (section 9, follow-up requests); 404; 409 while a run is going, without a completed application, or for a too short instruction | frontend |
 | 4 | `POST /tasks/{id}/reassign` | - | 200 Task | frontend |
 | 5 | `GET /metrics/agents` | - | time, success rate, tokens per agent | frontend |
 
@@ -335,10 +336,34 @@ for it (section 8). No other type exists; a new one needs a contract change.
 | `integration` | Joining the parts into one runnable app | master, one per project | 4 | 0.3 | 0.3 | 0.4 |
 | `requirements_analysis` | Reading the requirement and planning the tasks | master itself; never assigned to a worker | 1 | 0.1 | 0.6 | 0.3 |
 | `documentation` | README and usage notes of the generated app | master, optional | 5 | 0.1 | 0.4 | 0.5 |
+| `revision` | A follow-up request on the finished application: one task over every finished task; the worker returns every application file, changed or not | master, one per request | 4 | 0.4 | 0.3 | 0.3 |
 
 Until Sprint 4 the decomposer produces only `frontend`, `backend`, `database`
 and `testing`; in Sprint 3 exactly one of each (section 12.2). The weights live as constants in `dap/master/core/selector.py`;
 tuning them is a Sprint 5 activity.
+
+### 9.1 Follow-up requests (from Sprint 4)
+
+After a run ended with the application completed, the user can ask for a change
+(`POST /projects/{id}/followup`, body `{"instruction": "..."}`, 10 to 2000
+characters). The master:
+
+1. refuses the request while a run is going or when the project status is not
+   `completed` (409);
+2. creates exactly one task of type `revision`, title `Follow-up: ...`, the
+   instruction in the description, `depends_on` every finished task, and
+   records a `followup` event in the project history;
+3. starts a run at once. The finished tasks give their files to the revision
+   task like any dependency (section 8); its `target_files` are the application
+   files that exist right now (`backend/database.py`, `backend/main.py`,
+   `frontend/index.html`, `tests/test_app.py`). The worker applies the request
+   to the current files and returns every target file complete, unchanged files
+   as they are; the usual checks (section 13 self-correction, verify) apply.
+4. the run ends with the acceptance check like every run; the project is
+   `completed` or `failed` again, and "Run again" retries a failed revision.
+
+The instruction is never written into code files by the master; it travels in
+the task description. The original requirement text stays as it is.
 
 ## 10. Capability measurement (from Sprint 2)
 

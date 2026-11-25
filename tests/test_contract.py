@@ -58,6 +58,7 @@ def test_enum_values_match_contract():
         "code_review",
         "integration",
         "documentation",
+        "revision",
     ]
     assert [s.value for s in TaskStatus] == [
         "pending",

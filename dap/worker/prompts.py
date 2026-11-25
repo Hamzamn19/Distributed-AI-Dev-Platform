@@ -53,6 +53,14 @@ GUIDE: dict[TaskType, str] = {
         "per business rule (a broken rule answers 400) and per action of the requirement. "
         "Use only the routes and fields that backend/main.py really has."
     ),
+    TaskType.REVISION: (
+        "The application is already built and works. A follow-up request from the user "
+        "asks for a change on top of it. Change as little as possible: keep every table, "
+        "function name, route, element id and test the other agents wrote, unless the "
+        "request itself asks to change them, and make the requested change work with "
+        "them. Return every allowed file complete: the changed files with the change, "
+        "the unchanged files exactly as you got them below."
+    ),
 }
 
 FILE_START = "=== FILE: {path} ==="
@@ -76,17 +84,26 @@ def template_text(path: str) -> str:
 
 def build_messages(payload: DapTaskPayload) -> list[dict]:
     allowed = ", ".join(payload.target_files)
+    # A revision task starts from the files the agents already wrote, not from the
+    # template: the templates would only tempt the model to start over.
+    revision = payload.type == TaskType.REVISION
     system = (
         f"You are the {payload.type.value} developer in a team of AI agents that builds "
         "one web application together. Each agent writes only its own files.\n"
         f"{GUIDE.get(payload.type, 'Write the files of your task.')}\n"
         f"You may write only these files: {allowed}. Write every one of them completely.\n"
-        "The task description is a short summary: your files must cover every record, "
-        "field, rule and action of the whole requirement for your part.\n"
-        "Rules for the files:\n"
-        "- Start from the template: keep its import lines, the parts it marks as ready or "
-        "required (for example the last line of backend/main.py), and follow its comments.\n"
-        "- Use exactly the function names, routes, fields and element ids of the files you "
+        + ("The task description carries the follow-up request: apply exactly that "
+           "change, and keep the rest of the application as it is.\n"
+           if revision else
+           "The task description is a short summary: your files must cover every record, "
+           "field, rule and action of the whole requirement for your part.\n")
+        + "Rules for the files:\n"
+        + ("- Start from the current files below: change only what the request needs "
+           "and keep the rest exactly as it is.\n"
+           if revision else
+           "- Start from the template: keep its import lines, the parts it marks as ready or "
+           "required (for example the last line of backend/main.py), and follow its comments.\n")
+        + "- Use exactly the function names, routes, fields and element ids of the files you "
         "get from the other agents; do not invent other names.\n"
         "- Write complete, working, modern code for the whole requirement: no placeholders, "
         "no TODO, no example code left over.\n"
@@ -101,7 +118,7 @@ def build_messages(payload: DapTaskPayload) -> list[dict]:
         f"Your task: {payload.title}\n{payload.description}",
     ]
     for path in payload.target_files:
-        template = template_text(path)
+        template = "" if revision else template_text(path)
         if template:
             parts.append(f"Template of {path} (fill it in):\n{template}")
     for file in payload.dependency_files:
