@@ -31,20 +31,26 @@ GUIDE: dict[TaskType, str] = {
         "Find every kind of record in the requirement (its nouns: people, things, events) "
         "with its fields and links; create one table per kind with sensible constraints "
         "and sample data; write all five list_/get_/add_/update_/delete_ functions for "
-        "EVERY table, plus one function per business rule or action of the requirement."
+        "EVERY table, plus one function per business rule or action of the requirement. "
+        "The search of list_<things> must really filter a text column (LIKE ? with "
+        "f'%{search}%'): searching a stored value finds it, a search that matches "
+        "nothing answers an empty list."
     ),
     TaskType.BACKEND: (
         "Write the FastAPI routes under /api for every table of backend/database.py: list "
         "with search, get, create, update, delete, one route per action of the requirement "
-        "and GET /api/stats. Validate input with pydantic Field limits. Call only functions "
-        "that backend/database.py really defines, with their exact parameters."
+        "and GET /api/stats. Pass the ?search= query parameter of the list routes on to the "
+        "list function (def list_<things>(search: str | None = None)). Validate input with "
+        "pydantic Field limits. Call only functions that backend/database.py really "
+        "defines, with their exact parameters."
     ),
     TaskType.FRONTEND: (
         "Write a clear, modern one-page interface in plain HTML and JavaScript (no build "
         "step, no framework): a dashboard with counts, then one section per record type "
         "with a search box, a table with Edit and Delete buttons, and a form to add and "
         "edit, plus buttons for the actions of the requirement. Use the ready CSS classes "
-        "and the helpers of lib.js; call only the /api routes of backend/main.py."
+        "and the helpers of lib.js; wire every search box with wireSearch(...) so it calls "
+        "the list route with ?search=...; call only the /api routes of backend/main.py."
     ),
     TaskType.TESTING: (
         "Write pytest tests with the ready TestClient. The master already tries list, "

@@ -34,8 +34,12 @@
          { label: "Delete", kind: "danger", run: (row) => remove(row.id) }])
       formData(form) -> object of the named inputs (numbers as numbers, no "id")
       fillForm(form, record), escapeHtml(value), debounce(run, 300)
+      wireSearch("search-<things>", "/api/<things>", (rows) => renderTable(...))  — the
+      search box calls the list route with ?search=...; use it instead of your own
+      listener, so the search always filters the table
   - For every record type: a load function fills its table and the search box filters it
-    (?search=...); the form adds a record (POST) or, when its hidden id is set, updates it
+    (?search=... with wireSearch above); the form adds a record (POST) or, when its hidden
+    id is set, updates it
     (PUT); Edit fills the form, Delete asks confirm() first; actions of the requirement are
     row buttons too. Show states and categories with <span class="badge">.
   - Select inputs that link to another record (for example <thing>_id) are filled from

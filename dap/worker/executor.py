@@ -257,6 +257,19 @@ for table in tables:
                  f"not {record!r:.80}. execute() answers the new id of an INSERT.")
     if not isinstance(call(f"get_{one}", record["id"]), dict):
         sys.exit(f"get_{one}({record['id']}) does not find the record add_{one} just added")
+    if inspect.signature(getattr(database, f"list_{table}")).parameters:
+        needle = next((str(v) for v in record.values()
+                       if isinstance(v, str) and len(v.strip()) >= 3), None)
+        if needle:
+            hits = call(f"list_{table}", needle)
+            if not any(isinstance(r, dict) and r.get("id") == record["id"] for r in hits or []):
+                sys.exit(f"list_{table}({needle!r}) does not find the record add_{one} just "
+                         "added: the search must really filter a text column, for example "
+                         "sql += ' WHERE <text column> LIKE ?' with (f'%{search}%',).")
+        misses = call(f"list_{table}", "zzqxjv77")
+        if any(isinstance(r, dict) and r.get("id") == record["id"] for r in misses or []):
+            sys.exit("list_<things>(search) ignores the search: a search that matches "
+                     "nothing must answer an empty list, not every record.")
     call(f"delete_{one}", record["id"])
 '''
 
@@ -283,6 +296,20 @@ for path in paths:
         sys.exit(f"GET {path} fails: {type(exc).__name__}: {exc}")
     if response.status_code >= 500:
         sys.exit(f"GET {path} answers {response.status_code}: {response.text[:200]}")
+# A list route must pass ?search= on to its list_<things>(search) function: a search
+# that matches nothing may not answer every record (the page's search box relies on it).
+for base in [p for p in paths if p.count("/") == 2]:
+    try:
+        every = client.get(base).json()
+        misses = client.get(base, params={"search": "zzqxjv77"}).json()
+    except Exception:
+        continue  # the GET checks above already failed loudly
+    if (isinstance(every, list) and every and isinstance(misses, list)
+            and len(misses) >= len(every)):
+        sys.exit(f"GET {base}?search=... answers every record: the route must pass the "
+                 "?search= value on to list_<things>(search), for example "
+                 "def list_<things>(search: str | None = None) with "
+                 "database.list_<things>(search).")
 '''
 
 

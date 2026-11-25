@@ -4,6 +4,7 @@
 //   renderTable(id, rows, columns, actions)   a table with row buttons
 //   formData(form) / fillForm(form, record)   read and fill a form
 //   escapeHtml(value), debounce(run, ms)
+//   wireSearch(inputId, route, apply)   a search box that calls route?search=...
 // Buttons with data-reset reset their form.
 
 async function api(path, options = {}) {
@@ -79,6 +80,17 @@ function fillForm(form, record) {
 function debounce(run, ms = 300) {
   let timer;
   return (...args) => { clearTimeout(timer); timer = setTimeout(() => run(...args), ms); };
+}
+
+// A search box that really filters one section's table: wireSearch(inputId, route, apply)
+// calls route?search=... (while the user types, debounced) and gives the answer to apply.
+//   wireSearch("search-books", "/api/books", (rows) => renderTable("books", rows, cols));
+function wireSearch(inputId, route, apply) {
+  const box = document.getElementById(inputId);
+  if (!box) return;
+  const run = () => api(`${route}?search=${encodeURIComponent(box.value.trim())}`).then(apply);
+  box.addEventListener("input", debounce(run));
+  box.addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); run(); } });
 }
 
 document.addEventListener("click", (event) => {

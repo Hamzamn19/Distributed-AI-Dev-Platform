@@ -51,6 +51,7 @@ _RECORDS = re.compile(r"Records: (.+?)\. This task covers all of them\.")
 # Runs in the copied application folder; argv[1] is the JSON list of expected records.
 _SCRIPT = r'''
 import datetime, json, random, re, sys, tempfile
+from urllib.parse import quote
 from pathlib import Path
 sys.path.insert(0, ".")
 MARKER = "DAP-ACCEPTANCE:"
@@ -234,6 +235,30 @@ for name in found:
     if new_id is None:
         skip(name, steps[3:])
         continue
+    # The search must really filter: the record it just created is findable by a value
+    # of it, and a search that matches nothing does not answer every record.
+    body_of = response.json() if outcome == "pass" else {}
+    needles = [v for v in body_of.values() if isinstance(v, str) and len(v.strip()) >= 3]
+    if not needles:
+        add(name, "search", "skipped", "the created record has no text field to search")
+    else:
+        found = False
+        for needle in needles:
+            outcome_s, response_s = call(name, "search", "GET",
+                                         f"{base}?search={quote(needle)}", (200,))
+            rows = response_s.json() if outcome_s == "pass" else None
+            if isinstance(rows, list) and any(
+                    isinstance(r, dict) and r.get("id") == new_id for r in rows):
+                found = True
+        if not found:
+            add(name, "search", "fail", f"GET {base}?search=... does not find the record "
+                "it just created: the search must filter a text column")
+        outcome_s, response_s = call(name, "search", "GET", f"{base}?search=zzqxjv77", (200,))
+        rows = response_s.json() if outcome_s == "pass" else None
+        if isinstance(rows, list) and any(
+                isinstance(r, dict) and r.get("id") == new_id for r in rows):
+            add(name, "search", "fail", f"GET {base}?search=... ignores the search: "
+                "a search that matches nothing must not answer every record")
     item = item_path(name)
     if item is None:
         add(name, "get", "fail", f"no {base}/{{id}} route")
