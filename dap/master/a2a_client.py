@@ -98,3 +98,11 @@ def cancel_task(url: str, remote_id: str, token: str) -> None:
     marked the task failed, so the caller may ignore it.
     """
     _call("POST", f"{url}/tasks/{remote_id}:cancel", token)
+
+
+def get_progress(url: str, remote_id: str, token: str) -> dict:
+    """The model's writing progress of a running task (Sprint 4, streaming)."""
+    data = _call("GET", f"{url}/tasks/{remote_id}/progress", token)
+    if not isinstance(data, dict):
+        raise A2AError(f"bad progress answer from {url}")
+    return data

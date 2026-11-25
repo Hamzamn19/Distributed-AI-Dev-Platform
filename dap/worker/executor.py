@@ -136,6 +136,38 @@ FIX_ROUNDS = 2          # extra answers the model may give after a failed check
 REPEAT_TEMPERATURE = 0.7  # for the answer after one that repeated the previous answer
 
 _stop_event = threading.Event()  # set when the running task is cancelled (A2A CancelTask)
+_live_lock = threading.Lock()
+_live: dict = {}  # the model's writing progress of the current task (A2A progress)
+
+
+def _live_report(round_number: int, task_type: str):
+    """The on_chunk callback for the current task's model call (streaming)."""
+
+    def report(generated_tokens: int, tail: str) -> None:
+        with _live_lock:
+            _live.update(round=round_number, type=task_type, generated_tokens=generated_tokens,
+                         tail=tail)
+
+    return report
+
+
+def live_progress(task_id: str) -> dict:
+    """The writing progress of one task (None when it is not generating now)."""
+    with _live_lock:
+        if _live.get("task_id") != task_id:
+            return {}
+        return {key: value for key, value in _live.items() if key != "task_id"}
+
+
+def _live_start(task_id: str, task_type: str) -> None:
+    with _live_lock:
+        _live.clear()
+        _live.update(task_id=task_id, type=task_type, round=0, generated_tokens=0, tail="")
+
+
+def _live_end() -> None:
+    with _live_lock:
+        _live.clear()
 
 
 class TaskCanceled(Exception):
@@ -478,9 +510,33 @@ class _Page(HTMLParser):
 
 
 def _route_pattern(path: str) -> re.Pattern:
-    """/api/tasks/{id} -> a pattern that matches /api/tasks/7 (and a trailing slash)."""
-    parts = re.split(r"\{[^}]*\}", path)
+    """/api/tasks/{id} -> a pattern that matches /api/tasks/7 (and a trailing slash).
+
+    A page's template-literal segment (`${recordType}`) becomes `[^/]+` too: the
+    page may build one call for several record types (for example api(`/api/${rt}`)
+    over tickets, spots and payments). Its literal segments must still match.
+    """
+    parts = re.split(r"\{[^}]*\}|\$\{[^}]*\}", path)
     return re.compile("[^/]+".join(re.escape(part) for part in parts) + "/?")
+
+
+def _path_matches(page_path: str, route: str) -> bool:
+    """One page call matches one route, segment by segment.
+
+    A template-literal segment of the page (`${recordType}`) may be any real
+    segment (the page builds one call for several record types); a route
+    parameter ({ticket_id}) accepts any value; literal segments must match.
+    """
+    page_segments = page_path.strip("/").split("/")
+    route_segments = route.strip("/").split("/")
+    if len(page_segments) != len(route_segments):
+        return False
+    for page_segment, route_segment in zip(page_segments, route_segments):
+        if page_segment.startswith("${") or route_segment.startswith("{"):
+            continue
+        if page_segment != route_segment:
+            return False
+    return True
 
 
 def check_frontend(page: str, main_source: str) -> str | None:
@@ -492,15 +548,17 @@ def check_frontend(page: str, main_source: str) -> str | None:
     """
     parsed = _Page(page)
     code = _JS_COMMENTS.sub("", "\n".join(parsed.scripts))
-    route_paths = _ROUTE.findall(main_source)
-    routes = [_route_pattern(path.split("?")[0]) for path in route_paths]
+    route_paths = [p.split("?")[0] for p in _ROUTE.findall(main_source)]
     unknown = []
     for raw in _API_PATH.findall(code):
         if "<" in raw:
             continue
-        path = re.sub(r"\$\{[^}]*\}", "1", raw).split("?")[0]
-        candidates = [path, path + "1"] if path.endswith("/") else [path]
-        if not any(r.fullmatch(c) for r in routes for c in candidates):
+        path = raw.split("?")[0]
+        base = path.rstrip("/")
+        # '/api/tasks/' + id: the concatenated value is one more dynamic segment.
+        candidates = [base, base + "/${next}"] if path.endswith("/") else [base]
+        if not any(_path_matches(candidate, route.rstrip("/"))
+                   for candidate in candidates for route in route_paths):
             unknown.append(raw)
     problems = []
     if unknown:
@@ -658,9 +716,12 @@ def execute(payload: DapTaskPayload) -> DapTaskOutput:
     for round_number in range(1 + FIX_ROUNDS):
         if cancel_requested():
             raise TaskCanceled("cancelled by the user")
-        # plain text blocks; RuntimeError: model down
-        answer = (chat(messages, json_mode=False, temperature=REPEAT_TEMPERATURE) if repeated
-                  else chat(messages, json_mode=False))
+        # plain text blocks; RuntimeError: model down — streamed, so the master's
+        # /projects/{id}/live endpoint shows the model writing live (Sprint 4)
+        answer = ((chat(messages, json_mode=False, temperature=REPEAT_TEMPERATURE,
+                        on_chunk=_live_report(round_number, payload.type.value)) if repeated
+                  else chat(messages, json_mode=False,
+                            on_chunk=_live_report(round_number, payload.type.value))))
         prompt_tokens += answer.prompt_tokens
         completion_tokens += answer.completion_tokens
         duration_ms += answer.duration_ms
@@ -791,6 +852,7 @@ class Executor:
             with self._lock:
                 self._current = task_id
             _stop_event.clear()
+            _live_start(task_id, payload.type.value)
             self._set(task_id, A2ATaskState.WORKING)
             logger.info("Working on %s (%s)", task_id, payload.title)
             start = time.perf_counter()
@@ -812,6 +874,7 @@ class Executor:
             finally:
                 with self._lock:
                     self._current = None
+                _live_end()
                 _stop_event.clear()
                 self._canceled.discard(task_id)
 

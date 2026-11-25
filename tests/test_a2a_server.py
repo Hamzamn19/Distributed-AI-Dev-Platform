@@ -180,7 +180,7 @@ def test_real_mode_reads_the_models_json_answer(monkeypatch):
     database = MOCK_FILES["backend/database.py"]
     answer = "```json\n" + __import__("json").dumps({"summary": "tables", "files": [
         {"path": "backend/database.py", "content": database}]}) + "\n```"
-    monkeypatch.setattr(executor_module, "chat", lambda messages, json_mode: LLMResponse(
+    monkeypatch.setattr(executor_module, "chat", lambda messages, json_mode, on_chunk=None: LLMResponse(
         text=answer, prompt_tokens=10, completion_tokens=20, duration_ms=30))
     from dap.shared.schemas import DapTaskPayload
 
@@ -212,7 +212,7 @@ def test_markdown_fences_around_a_file_are_removed(monkeypatch):
     fenced = f"```python\n{database}```"
     answer = '{"summary": "s", "files": [{"path": "backend/database.py", "content": %s}]}' % (
         __import__("json").dumps(fenced))
-    monkeypatch.setattr(executor_module, "chat", lambda messages, json_mode: LLMResponse(
+    monkeypatch.setattr(executor_module, "chat", lambda messages, json_mode, on_chunk=None: LLMResponse(
         text=answer, prompt_tokens=1, completion_tokens=1, duration_ms=1))
     from dap.shared.schemas import DapTaskPayload
 

@@ -28,6 +28,7 @@ from dap.shared.schemas import (
     first_data,
 )
 from dap.worker.config import WorkerSettings
+from dap.worker import executor as executor_module
 from dap.worker.executor import Executor
 
 JSON_TYPES = ("application/json", "application/a2a+json")
@@ -77,6 +78,12 @@ def create_app(settings: WorkerSettings, executor: Executor, public_url: str) ->
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
         return JSONResponse(task.to_wire())
+
+    @app.get("/tasks/{task_id}/progress", dependencies=[Depends(require_token)])
+    def get_progress(task_id: str) -> JSONResponse:
+        """The model's writing progress of a running task (Sprint 4, streaming)."""
+        progress = executor_module.live_progress(task_id)
+        return JSONResponse({"task_id": task_id, "state": "generating", **progress})
 
     @app.post("/tasks/{task_id}:cancel", dependencies=[Depends(require_token)])
     def cancel_task(task_id: str) -> JSONResponse:

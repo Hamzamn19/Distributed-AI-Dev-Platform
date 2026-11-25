@@ -52,6 +52,7 @@ import logging
 from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import PlainTextResponse
 
+from dap.master import a2a_client
 from dap.master.config import get_settings
 from dap.master.core import decomposer, followup, integrator, orchestrator, preview, selector
 from dap.master.db import repositories, results
@@ -205,6 +206,34 @@ def export_project(project_id: str):
         raise HTTPException(status_code=409, detail=f"Nothing to export: {exc}") from exc
     return Response(content=content, media_type="application/zip",
                     headers={"Content-Disposition": f'attachment; filename="{filename}"'})
+
+
+@router.get("/{project_id}/live")
+def live_progress(project_id: str) -> list[dict]:
+    """The model's writing progress of the running tasks (Sprint 4, streaming).
+
+    The UI polls this every few seconds; each answer is fetched from the task's
+    worker at that moment. A worker that does not answer is skipped.
+    """
+    _get_project_or_404(project_id)
+    live = []
+    for task in repositories.list_tasks(project_id):
+        if task.status != TaskStatus.IN_PROGRESS:
+            remote_id = repositories.remote_task_id(task.id)
+            if not remote_id:
+                continue
+            continue
+        agent = repositories.get_agent(task.assigned_agent_id)
+        if agent is None or not agent.a2a_url:
+            continue
+        try:
+            progress = a2a_client.get_progress(agent.a2a_url, remote_id,
+                                               get_settings().agent_token)
+        except a2a_client.A2AError:
+            continue  # an unreachable worker shows nothing, it does not fail the page
+        live.append({"task_id": task.id, "type": task.type.value,
+                     "agent": agent.agent_id, **progress})
+    return live
 
 
 @router.post("/{project_id}/preview")

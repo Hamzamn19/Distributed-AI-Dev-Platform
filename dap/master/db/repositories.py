@@ -226,6 +226,13 @@ def get_task(task_id: str) -> Task | None:
         return _task(record) if record is not None else None
 
 
+def remote_task_id(task_id: str) -> str | None:
+    """The worker's A2A task id of a task (None when it was never sent)."""
+    with SessionLocal() as session:
+        record = session.get(TaskModel, task_id)
+        return record.remote_task_id if record is not None else None
+
+
 def assign_task(task_id: str, agent_id: str, reason: str) -> Task:
     with SessionLocal.begin() as session:
         record = session.get(TaskModel, task_id)

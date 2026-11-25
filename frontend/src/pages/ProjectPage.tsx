@@ -9,6 +9,7 @@ import {
   getAcceptance,
   getAgents,
   getFiles,
+  getLive,
   getProject,
   getQueue,
   getResults,
@@ -16,6 +17,7 @@ import {
   requestFollowup,
   runProject,
 } from "../api/client";
+import type { LiveProgress } from "../api/client";
 import type { Project, Task, TaskResult } from "../api/types";
 import AcceptanceMatrix from "../components/AcceptanceMatrix";
 import Badge from "../components/Badge";
@@ -100,7 +102,13 @@ export default function ProjectPage() {
     } catch {
       // an older master without the queue endpoint: show nothing
     }
-    return { project, tasks, agents, results, files, acceptance, queued };
+    let live: LiveProgress[] = [];
+    try {
+      live = await getLive(id);
+    } catch {
+      // an older master without the live endpoint: show nothing
+    }
+    return { project, tasks, agents, results, files, acceptance, queued, live };
   }, [id]);
   const { data, error, loading, refresh } = usePolling(load);
 
@@ -186,7 +194,7 @@ export default function ProjectPage() {
     );
   }
 
-  const { project, tasks, agents, files, acceptance, queued } = data;
+  const { project, tasks, agents, files, acceptance, queued, live } = data;
   const hasTasks = tasks.length > 0;
   const hasAssignments = tasks.some((t) => t.assigned_agent_id);
   const running = tasks.some((t) => t.status === "in_progress") || ["decomposing", "integrating"].includes(project.status);
@@ -241,6 +249,30 @@ export default function ProjectPage() {
           <p className="mt-0.5 text-sm text-muted">
             Every agent is busy right now. The run starts on its own as soon as one is free again.
           </p>
+        </section>
+      )}
+
+      {live.length > 0 && (
+        <section className="card p-4 sm:p-5" style={{ borderLeft: "4px solid", borderLeftColor: fg("plan") }}>
+          <div className="flex items-center justify-between gap-3">
+            <p className="text-sm font-semibold text-ink">
+              Writing now {live.length > 1 ? `(${live.length} tasks)` : ""}
+            </p>
+            <span className="text-xs text-muted">updates every few seconds</span>
+          </div>
+          {live.map((entry) => (
+            <div key={entry.task_id} className="mt-3 rounded-md bg-surface p-3" style={{ fontFamily: "var(--font-mono, monospace)" }}>
+              <div className="flex flex-wrap items-center gap-2 text-xs text-muted" style={{ fontFamily: "var(--font-sans, sans-serif)" }}>
+                <Badge value={entry.type} />
+                <span>{entry.agent}</span>
+                <span>· round {entry.round}</span>
+                <span>· {entry.generated_tokens.toLocaleString()} tokens</span>
+              </div>
+              <pre className="mt-2 max-h-40 overflow-hidden whitespace-pre-wrap break-words text-xs leading-relaxed text-ink">
+                {entry.tail || "thinking…"}
+              </pre>
+            </div>
+          ))}
         </section>
       )}
 

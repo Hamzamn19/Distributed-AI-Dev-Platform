@@ -228,6 +228,8 @@ All paths start with `/api/v1`. Endpoints called by workers need the
 | 3 | `POST /projects/{id}/preview` | - | 200 `{"project_id", "port"}`: the generated application runs on `PREVIEW_PORT` of the master (one at a time); 409 without a written backend, 502 when it does not start | frontend |
 | 4 | `POST /projects/{id}/followup` | FollowupCreate `{instruction}` | 202 Project: one `revision` task over the finished tasks is created and run right away (section 9, follow-up requests); 404; 409 while a run is going, without a completed application, or for a too short instruction | frontend |
 | 4 | `GET /projects/{id}/export` | - | 200 zip (`application/zip`): the generated application as one archive (app files, helpers, acceptance.json; without `.git`, `app.db`, `__pycache__`); 404; 409 when the project has no files yet | frontend |
+| 4 | `GET /projects/{id}/queue` | - | 200 `{"queued": bool, "position": int\|null}`: the project's place in the run queue; the UI polls it for the queued banner | frontend |
+| 4 | `GET /projects/{id}/live` | - | 200 list: the model's writing progress of every running task, fetched from the workers on demand (`[{taskId, type, agent, round, generatedTokens, tail}]`); the UI polls it every ~2 s for the live view | frontend |
 | 4 | `POST /tasks/{id}/reassign` | - | 200 Task | frontend |
 | 5 | `GET /metrics/agents` | - | time, success rate, tokens per agent | frontend |
 
@@ -582,11 +584,16 @@ implement three operations, by hand with FastAPI, Pydantic and httpx:
 | Agent Card | `GET /.well-known/agent-card.json` | no token |
 | SendMessage | `POST /message:send` | the master always sends `configuration.returnImmediately: true`; answer `{"task": Task}` |
 | GetTask | `GET /tasks/{id}` | the master polls it every `A2A_POLL_INTERVAL_SEC`; answer: the Task |
+| CancelTask (Sprint 4) | `POST /tasks/{id}:cancel` | best effort: the worker stops the task at its next check |
+| Live progress (Sprint 4) | `GET /tasks/{id}/progress` | the model's writing progress of one running task: `{round, type, generatedTokens, tail}`; `{}` extras when the task is not generating now |
 
 Every master -> worker request carries `X-Agent-Token` (401 when wrong) and
-`A2A-Version: 1.0`. Not implemented: streaming, push notifications, ListTasks,
-CancelTask, SubscribeToTask, the extended agent card (the card says
-`"streaming": false, "pushNotifications": false`).
+`A2A-Version: 1.0`. Not implemented: streaming (SSE), push notifications,
+ListTasks, SubscribeToTask, the extended agent card (the card says
+`"streaming": false, "pushNotifications": false`). The live progress endpoint
+is our own extension of the GetTask polling: the worker streams the model's
+answer locally and keeps the running token count and the last ~400 characters;
+the master collects them in `GET /api/v1/projects/{id}/live`.
 
 Wire rules: camelCase field names, enum names such as `TASK_STATE_COMPLETED`
 and `ROLE_USER`, parts without a `kind` field (`{"text": ...}` or

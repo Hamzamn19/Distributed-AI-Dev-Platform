@@ -122,6 +122,20 @@ export function getQueue(id: string): Promise<{ queued: boolean; position: numbe
   return request(`/projects/${id}/queue`);
 }
 
+// The model's writing progress of the running tasks (Sprint 4): the live view.
+export interface LiveProgress {
+  task_id: string;
+  type: string;
+  agent: string;
+  round: number;
+  generated_tokens: number;
+  tail: string;
+}
+
+export function getLive(id: string): Promise<LiveProgress[]> {
+  return request(`/projects/${id}/live`);
+}
+
 // Runs the project's generated application on the master; it answers on this port.
 export function startPreview(id: string): Promise<{ project_id: string; port: number }> {
   return request(`/projects/${id}/preview`, { method: "POST" });

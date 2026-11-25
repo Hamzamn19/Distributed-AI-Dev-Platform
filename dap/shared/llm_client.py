@@ -25,6 +25,7 @@ import json
 import os
 import re
 import time
+from collections.abc import Callable
 
 from dotenv import load_dotenv
 from openai import OpenAI
@@ -137,8 +138,14 @@ def chat(
     temperature: float = 0.2,
     max_tokens: int | None = None,
     json_mode: bool = False,
+    on_chunk: Callable[[int, str], None] | None = None,
 ) -> LLMResponse:
-    """Send a chat request to the model and return its answer."""
+    """Send a chat request to the model and return its answer.
+
+    on_chunk (streaming, Sprint 4): called during the answer with the running
+    (generated_tokens, text_tail) so a caller can show the model writing live;
+    the request goes out with stream: true and the chunks are joined.
+    """
     if _is_mock():
         text = json.dumps(MOCK_JSON) if json_mode else MOCK_TEXT
         return LLMResponse(text=text, prompt_tokens=0, completion_tokens=0, duration_ms=0)
@@ -155,12 +162,19 @@ def chat(
     if json_mode:
         kwargs["response_format"] = {"type": "json_object"}
 
+    if on_chunk is not None:
+        kwargs["stream"] = True
+        kwargs["stream_options"] = {"include_usage": True}
+
     client = _client(base_url, api_key or "none")
     last_error: Exception | None = None
     for _ in range(ATTEMPTS):
         start = time.perf_counter()
         try:
-            response = client.chat.completions.create(**kwargs)
+            if on_chunk is None:
+                response = client.chat.completions.create(**kwargs)
+            else:
+                return _chat_streaming(client, kwargs, base_url, model, start, on_chunk)
         except Exception as exc:  # connection refused, timeout, HTTP error ...
             last_error = exc
             continue
@@ -175,6 +189,32 @@ def chat(
 
     raise RuntimeError(
         f"LLM at {base_url} (model {model}) did not answer after {ATTEMPTS} attempts: {last_error}"
+    )
+
+
+def _chat_streaming(client, kwargs: dict, base_url: str, model: str,
+                    start: float, on_chunk: Callable[[int, str], None]) -> LLMResponse:
+    """The streaming answer: join the chunks and report the progress while it runs."""
+    text_parts: list[str] = []
+    usage = None
+    stream = client.chat.completions.create(**kwargs)
+    for chunk in stream:
+        if getattr(chunk, "usage", None) is not None:
+            usage = chunk.usage
+        if not chunk.choices:
+            continue
+        piece = chunk.choices[0].delta.content or ""
+        if piece:
+            text_parts.append(piece)
+            on_chunk(len(text_parts) and sum(len(p) for p in text_parts) // 4,
+                     "".join(text_parts)[-400:])
+    text = "".join(text_parts)
+    completion_tokens = usage.completion_tokens if usage else max(len(text) // 4, 1)
+    return LLMResponse(
+        text=strip_think(text),
+        prompt_tokens=usage.prompt_tokens if usage else 0,
+        completion_tokens=completion_tokens,
+        duration_ms=int((time.perf_counter() - start) * 1000),
     )
 
 

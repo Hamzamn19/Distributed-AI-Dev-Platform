@@ -37,7 +37,11 @@ from dap.shared.schemas import (
     TaskCreate,
     TaskStatusA2A,
 )
-from dap.worker.executor import Executor
+from dap.worker.executor import Executor, live_progress
+import dap.worker.executor as executor_module
+from dap.master.core import followup as followup_module
+
+CHANGE = "Add a due date to every task and sort the list by it."
 
 REAL_CHECK = acceptance.check
 STARTED = {"started": True, "error": None, "summary": "1 of 1 checks passed", "passed": 1,
@@ -61,6 +65,7 @@ def db(tmp_path, monkeypatch):
     monkeypatch.setattr(integrator, "TEMPLATE_DIR", tmp_path / "no-template")
     monkeypatch.setattr(acceptance, "check", lambda pid, records=(): dict(STARTED))
     monkeypatch.setenv("AGENT_TOKEN", "t")
+    monkeypatch.setenv("LLM_MOCK", "0")  # no .env of the machine (a real .env sets LLM_MOCK=1)
     yield
     engine.dispose()
 
@@ -408,3 +413,105 @@ def _settings(poll: float):
     return MasterSettings(agent_token="t", host="h", port=1, database_url="s",
                           cors_origins=[], heartbeat_timeout_sec=30, task_timeout_sec=900,
                           a2a_poll_interval_sec=poll, run_mode="sequential", preview_port=8100)
+
+
+# -------------------------------------------------------- (streaming) live writing
+
+
+def test_the_worker_reports_the_writing_progress_of_a_running_task(db, monkeypatch):
+    """The on_chunk callback of chat() fills the executor's live view while the task runs."""
+    import dap.shared.llm_client as llm
+    monkeypatch.setenv("LLM_BASE_URL", "http://fake:1/v1")
+    monkeypatch.setenv("LLM_MODEL", "fake")
+    seen: list[tuple] = []
+
+    def streaming_run(payload):
+        llm.chat([{"role": "user", "content": "write"}],
+                 on_chunk=lambda tokens, tail: seen.append((tokens, tail)))
+        return DapTaskOutput(summary="s", files=[GeneratedFile(path="backend/database.py",
+                                                              content="x")])
+
+    from types import SimpleNamespace
+    chunks = [
+        SimpleNamespace(usage=None, choices=[SimpleNamespace(delta=SimpleNamespace(content="AB"))]),
+        SimpleNamespace(usage=None, choices=[SimpleNamespace(delta=SimpleNamespace(content="CD"))]),
+        SimpleNamespace(usage=SimpleNamespace(prompt_tokens=7, completion_tokens=2), choices=[]),
+    ]
+
+    class FakeCompletions:
+        @staticmethod
+        def create(**kwargs):
+            return iter(chunks)
+
+    class FakeChat:
+        completions = FakeCompletions
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(llm, "_client", lambda *a, **k: FakeClient())
+    executor = Executor(run=streaming_run)
+    payload = DapTaskPayload(
+        task_id="t1", project_id="p", type=TaskType.DATABASE, title="database",
+        description="d", requirement_text="r", target_files=["backend/database.py"])
+    remote = executor.submit(payload, "p")
+    for _ in range(100):
+        task = executor.get(remote.id)
+        if task.status.state == A2ATaskState.COMPLETED:
+            break
+        threading.Event().wait(0.05)
+    assert seen, "on_chunk must fire while the model writes"
+    assert seen[-1][1] == "ABCD"
+    assert live_progress(remote.id) == {}  # the task finished: the live view is empty again
+
+
+def test_chat_streams_the_chunks_and_reports_the_tail(db, monkeypatch):
+    from types import SimpleNamespace
+    import dap.shared.llm_client as llm
+    monkeypatch.setenv("LLM_BASE_URL", "http://fake:1/v1")
+    monkeypatch.setenv("LLM_MODEL", "fake")
+
+    chunks = [
+        SimpleNamespace(usage=None, choices=[SimpleNamespace(delta=SimpleNamespace(content="AB"))]),
+        SimpleNamespace(usage=None, choices=[SimpleNamespace(delta=SimpleNamespace(content="CD"))]),
+        SimpleNamespace(usage=SimpleNamespace(prompt_tokens=7, completion_tokens=2), choices=[]),
+    ]
+    calls = {}
+
+    class FakeCompletions:
+        @staticmethod
+        def create(**kwargs):
+            calls.update(kwargs)
+            return iter(chunks)
+
+    class FakeChat:
+        completions = FakeCompletions
+
+    class FakeClient:
+        chat = FakeChat()
+
+    monkeypatch.setattr(llm, "_client", lambda *a, **k: FakeClient())
+    seen: list[tuple[int, str]] = []
+    answer = llm.chat([{"role": "user", "content": "hi"}], on_chunk=lambda t, tail: seen.append((t, tail)))
+    assert answer.text == "ABCD"
+    assert answer.completion_tokens == 2
+    assert calls["stream"] is True
+    assert seen[-1][1] == "ABCD"
+
+
+def test_the_master_live_endpoint_proxies_the_worker(db, monkeypatch):
+    pid = make_project()
+    client = TestClient(app)
+    assert client.get(f"/api/v1/projects/{pid}/live").json() == []  # nothing runs
+
+    agent("a1")
+    (task,) = repositories.create_tasks(pid, [TaskCreate(
+        id="rev1", type=TaskType.REVISION, title="t", description="d")])
+    repositories.assign_task(task.id, "a1", "live")
+    repositories.set_task_status(task.id, TaskStatus.IN_PROGRESS, remote_task_id="r1")
+    progress = {"round": 1, "type": "revision", "generated_tokens": 120, "tail": "=== FILE: b"}
+    monkeypatch.setattr(a2a_client, "get_progress", lambda url, remote_id, token: progress)
+    answer = client.get(f"/api/v1/projects/{pid}/live")
+    assert answer.status_code == 200
+    (entry,) = answer.json()
+    assert entry["type"] == "revision" and entry["generated_tokens"] == 120
