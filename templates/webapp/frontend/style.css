@@ -8,7 +8,7 @@
    Every theme only changes the variables under it; the components below are shared. */
 
 :root,
-html[data-theme="modern"] {
+[data-theme="modern"] {
   --bg: #f4f6fb;
   --bg-glow: radial-gradient(1100px 420px at 85% -10%, #dbe4ff 0%, transparent 60%),
              radial-gradient(900px 380px at -10% 0%, #eef3ff 0%, transparent 55%);
@@ -30,7 +30,7 @@ html[data-theme="modern"] {
   color-scheme: light dark;
 }
 
-html[data-theme="midnight"] {
+[data-theme="midnight"] {
   --bg: #0b1020;
   --bg-glow: radial-gradient(1100px 450px at 80% -10%, #1c2a5e 0%, transparent 60%),
              radial-gradient(900px 400px at -5% 5%, #10263a 0%, transparent 55%);
@@ -52,7 +52,7 @@ html[data-theme="midnight"] {
   color-scheme: dark;
 }
 
-html[data-theme="warm"] {
+[data-theme="warm"] {
   --bg: #faf1e8;
   --bg-glow: radial-gradient(1000px 420px at 90% -10%, #ffe3c7 0%, transparent 60%),
              radial-gradient(800px 360px at -5% 0%, #ffeede 0%, transparent 55%);
@@ -73,7 +73,7 @@ html[data-theme="warm"] {
   --font: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
 }
 
-html[data-theme="forest"] {
+[data-theme="forest"] {
   --bg: #eff5ef;
   --bg-glow: radial-gradient(1000px 420px at 85% -10%, #d7ead9 0%, transparent 60%),
              radial-gradient(800px 360px at -5% 0%, #e3f0e4 0%, transparent 55%);
@@ -94,7 +94,7 @@ html[data-theme="forest"] {
   --font: "Inter", "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
 }
 
-html[data-theme="mono"] {
+[data-theme="mono"] {
   --bg: #ffffff;
   --bg-glow: none;
   --surface: #ffffff;
@@ -169,7 +169,7 @@ body {
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
-html[data-theme="mono"] .topbar h1 {
+[data-theme="mono"] .topbar h1 {
   background: none;
   -webkit-text-fill-color: currentColor;
 }
@@ -218,7 +218,7 @@ main { max-width: 1100px; margin: 0 auto; padding: 28px 16px 72px; }
   background-clip: text;
   -webkit-text-fill-color: transparent;
 }
-html[data-theme="mono"] .stat span { background: none; -webkit-text-fill-color: currentColor; }
+[data-theme="mono"] .stat span { background: none; -webkit-text-fill-color: currentColor; }
 .stat small { color: var(--muted); font-weight: 500; }
 
 .form-grid {
@@ -239,8 +239,8 @@ input, select, textarea, button {
   color: var(--text);
   transition: border-color 0.15s, box-shadow 0.15s, background 0.15s;
 }
-html[data-theme="mono"] input, html[data-theme="mono"] select, html[data-theme="mono"] textarea,
-html[data-theme="mono"] button { border-radius: var(--radius); }
+[data-theme="mono"] input, [data-theme="mono"] select, [data-theme="mono"] textarea,
+[data-theme="mono"] button { border-radius: var(--radius); }
 textarea { min-height: 70px; resize: vertical; }
 input:focus, select:focus, textarea:focus {
   outline: none;
@@ -257,7 +257,7 @@ button {
   font-weight: 600;
   box-shadow: var(--shadow);
 }
-html[data-theme="mono"] button { background: var(--accent); border-color: var(--accent); box-shadow: none; }
+[data-theme="mono"] button { background: var(--accent); border-color: var(--accent); box-shadow: none; }
 button:hover { transform: translateY(-1px); box-shadow: var(--shadow-lift); }
 button:active { transform: translateY(0); }
 button.secondary {
@@ -301,7 +301,7 @@ td.actions button { padding: 4px 10px; font-size: 0.85rem; }
   font-size: 0.8rem;
   font-weight: 600;
 }
-html[data-theme="mono"] .badge { border: 1px solid var(--border); border-radius: var(--radius); }
+[data-theme="mono"] .badge { border: 1px solid var(--border); border-radius: var(--radius); }
 
 .empty { color: var(--muted); text-align: center; padding: 18px; }
 
@@ -315,7 +315,7 @@ html[data-theme="mono"] .badge { border: 1px solid var(--border); border-radius:
 #message:empty { display: none; }
 #message.ok { color: var(--ok); background: color-mix(in srgb, var(--ok) 10%, transparent); }
 #message.error { color: var(--danger); background: color-mix(in srgb, var(--danger) 10%, transparent); }
-html[data-theme="mono"] #message.ok, html[data-theme="mono"] #message.error {
+[data-theme="mono"] #message.ok, [data-theme="mono"] #message.error {
   background: none; border: 1px solid var(--border);
 }
 
