@@ -15,10 +15,13 @@ Paths are checked with dap.master.db.workspace.check_paths and must stay inside
 the project folder. Without git the files are still written, with a warning.
 """
 
+import io
 import logging
+import re
 import shutil
 import subprocess
 import threading
+import zipfile
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -157,3 +160,30 @@ def read_file(project_id: str, path: str) -> str:
     if ".git" in target.relative_to(folder.resolve()).parts or not target.is_file():
         raise FileNotFoundError(path)
     return target.read_text(encoding="utf-8", errors="replace")
+
+
+RUNTIME_JUNK = {"app.db", "acceptance-check"}  # never inside the export
+
+
+def export_zip(project_id: str) -> tuple[bytes, str]:
+    """The generated application as one zip; (content, suggested filename).
+
+    The application files, the templates' helpers (db.py, lib.js, style.css) and
+    acceptance.json are inside; .git, app.db and __pycache__ are not. FileNotFoundError:
+    the project has no files yet.
+    """
+    folder = project_dir(project_id)
+    if not folder.is_dir() or not any(path.is_file() for path in folder.rglob("*")):
+        raise FileNotFoundError(f"project {project_id!r} has no files yet")
+    from dap.master.db import repositories  # only for the suggested name; no cycle at import
+    project = repositories.get_project(project_id)
+    name = re.sub(r"[^A-Za-z0-9._-]+", "_", (project.name if project else "")).strip("_")[:40]
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+        for path in sorted(folder.rglob("*")):
+            relative = path.relative_to(folder)
+            if (".git" in relative.parts or "__pycache__" in relative.parts
+                    or path.name in RUNTIME_JUNK or not path.is_file()):
+                continue
+            archive.write(path, arcname=relative.as_posix())
+    return buffer.getvalue(), f"{name or 'generated-app'}.zip"

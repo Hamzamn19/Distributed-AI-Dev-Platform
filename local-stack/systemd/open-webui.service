@@ -1,0 +1,42 @@
+[Unit]
+Description=Open WebUI (chat interface for local llama-server)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/home/hamzah/Documents/Distributed-AI-Dev-Platform/local-stack/open-webui/app/bin/open-webui serve --host 127.0.0.1 --port 3000
+Environment=PORT=3000
+Environment=HOST=127.0.0.1
+# All interface state lives in the project folder: chat history, model settings,
+# the project_files tool, and every access permission.
+Environment=DATA_DIR=/home/hamzah/Documents/Distributed-AI-Dev-Platform/local-stack/open-webui/data
+# Connect to local llama-server (OpenAI-compatible API)
+Environment=OPENAI_API_BASE_URL=http://127.0.0.1:8080/v1
+Environment=OPENAI_API_KEY=sk-local-llamacpp
+Environment=OPENAI_API_KEYS=["sk-local-llamacpp"]
+# Only the llama-server model, per user's choice
+Environment=ENABLE_OLLAMA_API=false
+Environment=ENABLE_OPENAI_API=true
+Environment=ENABLE_SIGNUP=true
+# No login page at all (tailnet-only access, per user request)
+Environment=WEBUI_AUTH=false
+Environment=ANONYMIZED_TELEMETRY=false
+Environment=DO_NOT_TRACK=true
+Environment=ENV=prod
+# Follow redirects when the loader fetches a page (each hop is re-validated
+# against the SSRF guard, so this stays safe). Default 'False' makes every
+# 302 (BBC, Guardian, most news sites) abort the whole load.
+Environment=AIOHTTP_CLIENT_ALLOW_REDIRECTS=true
+# Realistic browser User-Agent for the plain HTTP loader fallback;
+# Playwright's own UA is set separately in retrieval/web/utils.py.
+Environment=USER_AGENT=Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36
+# Safety net: the default is 256 rounds, and a model that keeps calling
+# search_web grows the context every round and can burn the GPU for minutes.
+# Ten rounds is generous for a real turn (search, read, answer) and stops a
+# runaway with a clear message instead of an hour of generation.
+Environment=CHAT_RESPONSE_MAX_TOOL_CALL_ITERATIONS=20
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target

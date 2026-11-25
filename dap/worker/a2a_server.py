@@ -5,6 +5,7 @@ Owner: Eray - Sprint 3.
     GET  /.well-known/agent-card.json   who this agent is (no token)
     POST /message:send                  queue a task, answer {"task": Task} at once
     GET  /tasks/{id}                    the task's state and, when done, its files
+    POST /tasks/{id}:cancel             A2A CancelTask: the task stops at its next check
 
 Requests from the master carry X-Agent-Token (401 when wrong) and A2A-Version: 1.0.
 Errors use the contract's {"detail": "..."}: unknown task 404, bad body 422.
@@ -76,5 +77,13 @@ def create_app(settings: WorkerSettings, executor: Executor, public_url: str) ->
         if task is None:
             raise HTTPException(status_code=404, detail="task not found")
         return JSONResponse(task.to_wire())
+
+    @app.post("/tasks/{task_id}:cancel", dependencies=[Depends(require_token)])
+    def cancel_task(task_id: str) -> JSONResponse:
+        """A2A CancelTask: stop the task at its next check; 404 for an unknown task."""
+        if not executor.cancel(task_id):
+            raise HTTPException(status_code=404,
+                                detail="task not found or already finished")
+        return JSONResponse({"ok": True})
 
     return app

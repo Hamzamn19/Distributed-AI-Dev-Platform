@@ -152,7 +152,11 @@ ProjectStatus: created | decomposing | in_progress | integrating | completed | f
 
 Task flow: `pending` -> `assigned` (master chose an agent) -> `in_progress`
 (worker took it) -> `completed` or `failed`. A failed task returns to `pending`
-with `attempt` + 1, at most 3 attempts.
+with `attempt` + 1, at most 3 attempts. From Sprint 4 a worker-level failure
+(the model broke, bad output, timeout, unreachable worker) is retried inside
+the same run on a different agent, while the attempt count allows it and
+another agent is usable; cancelled tasks, dependency failures and "no online
+agent" are never retried.
 
 The Sprint 1 decomposer produces only `frontend`, `backend`, `database`, `testing`.
 From Sprint 3 it produces exactly one task of each of these four types, in a
@@ -216,13 +220,14 @@ All paths start with `/api/v1`. Endpoints called by workers need the
 | 1 | `GET /projects/{id}/tasks` | - | list of Task | frontend |
 | 1 | `POST /projects/{id}/assign` | - | list of Task with `assigned_agent_id` and `assignment_reason` | frontend |
 | 3 | `GET /agents/{agent_id}/card` | - | the worker's A2A agent card, fetched by the master; 404 unknown agent or no A2A address; 502 the master cannot reach the worker | frontend |
-| 3 | `POST /projects/{id}/run` | - | 202 Project; starts sending the assigned tasks to the workers; 409 while a run is going | frontend |
+| 3 | `POST /projects/{id}/run` | - | 202 Project; starts sending the assigned tasks to the workers; 409 while a run is going. From Sprint 4: when agents are registered and online but none is idle, the project enters the run queue and starts when an agent is free again (the answer is still 202; `run_queued` in the history) | frontend |
 | 3 | `GET /projects/{id}/results` | - | list of TaskResult | frontend |
 | 3 | `GET /projects/{id}/files` | - | list of file paths in `workspace/<project_id>/` | frontend |
 | 3 | `GET /projects/{id}/files/{path}` | - | the file as text; 404; a path outside the project folder is refused | frontend |
 | 3 | `POST /projects/{id}/cancel` | - | 200 Project: the run stops at its next round; unfinished tasks fail with "cancelled by the user", the project fails ("Run again" continues); 409 when it is not running | frontend |
 | 3 | `POST /projects/{id}/preview` | - | 200 `{"project_id", "port"}`: the generated application runs on `PREVIEW_PORT` of the master (one at a time); 409 without a written backend, 502 when it does not start | frontend |
 | 4 | `POST /projects/{id}/followup` | FollowupCreate `{instruction}` | 202 Project: one `revision` task over the finished tasks is created and run right away (section 9, follow-up requests); 404; 409 while a run is going, without a completed application, or for a too short instruction | frontend |
+| 4 | `GET /projects/{id}/export` | - | 200 zip (`application/zip`): the generated application as one archive (app files, helpers, acceptance.json; without `.git`, `app.db`, `__pycache__`); 404; 409 when the project has no files yet | frontend |
 | 4 | `POST /tasks/{id}/reassign` | - | 200 Task | frontend |
 | 5 | `GET /metrics/agents` | - | time, success rate, tokens per agent | frontend |
 
@@ -594,9 +599,19 @@ and `ROLE_USER`, parts without a `kind` field (`{"text": ...}` or
   `DapTaskOutput`. A failed task has `status.message` with a text part that
   explains the error.
 - States: `TASK_STATE_SUBMITTED`, `TASK_STATE_WORKING`, `TASK_STATE_COMPLETED`,
-  `TASK_STATE_FAILED`, stored as `in_progress`, `in_progress`, `completed`, `failed`.
+  `TASK_STATE_FAILED`, `TASK_STATE_CANCELED` (Sprint 4), stored as `in_progress`,
+  `in_progress`, `completed`, `failed`, `failed`.
 - A worker runs one task at a time, in the order received; a message sent
   while it is busy is accepted and queued.
+- The master may cancel a task it sent (A2A CancelTask, Sprint 4):
+  `POST /tasks/{id}:cancel` on the worker; the worker stops the task at its
+  next check (a queued task never starts, the model stops after its running
+  call) and answers `TASK_STATE_CANCELED` with the message "cancelled by the
+  user"; its answer is thrown away. Unknown task or already finished: 404.
+- Refinements (Sprint 4): a follow-up request on an application is a new A2A
+  task in the same context (`contextId` is the project id, section 9.1), so
+  master and worker keep the whole history of one application under one
+  context, as the protocol's "Life of a Task" describes.
 - Before it answers, the worker checks the files: exactly the task's
   `target_files`, none empty, and every Python file loads next to the template
   and the files of all earlier tasks (`dependency_files` holds the whole chain).

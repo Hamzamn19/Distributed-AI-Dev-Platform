@@ -131,7 +131,8 @@ def test_dap_payload_rejects_unknown_fields():
 
 def test_a2a_states_map_to_task_status():
     assert {state.value for state in A2ATaskState} == {
-        "TASK_STATE_SUBMITTED", "TASK_STATE_WORKING", "TASK_STATE_COMPLETED", "TASK_STATE_FAILED"}
+        "TASK_STATE_SUBMITTED", "TASK_STATE_WORKING", "TASK_STATE_COMPLETED",
+        "TASK_STATE_FAILED", "TASK_STATE_CANCELED"}
     assert A2A_TO_TASK_STATUS[A2ATaskState.SUBMITTED] == TaskStatus.IN_PROGRESS
     assert A2A_TO_TASK_STATUS[A2ATaskState.WORKING] == TaskStatus.IN_PROGRESS
     assert A2A_TO_TASK_STATUS[A2ATaskState.COMPLETED] == TaskStatus.COMPLETED

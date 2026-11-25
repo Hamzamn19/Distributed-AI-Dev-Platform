@@ -1,0 +1,118 @@
+--- a/open_webui/retrieval/web/utils.py
++++ b/open_webui/retrieval/web/utils.py
+@@ -2,6 +2,7 @@
+ import http.cookiejar
+ import ipaddress
+ import logging
++import os
+ import socket
+ import ssl
+ import time
+@@ -648,6 +649,33 @@
+                 raise e
+ 
+ 
++
++# Realistic browser fingerprint: default Playwright headless ships a
++# "HeadlessChrome" UA and a webdriver flag that CDN bot filters reject outright.
++PLAYWRIGHT_USER_AGENT = (
++    'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 '
++    '(KHTML, like Gecko) Chrome/153.0.0.0 Safari/537.36'
++)
++
++PLAYWRIGHT_INIT_SCRIPT = (
++    "Object.defineProperty(navigator,'webdriver',{get:()=>undefined});"
++    "Object.defineProperty(navigator,'languages',{get:()=>['en-US','en']});"
++    "window.chrome=window.chrome||{runtime:{}};"
++)
++
++
++def _new_playwright_context(browser):
++    """Context with a real-looking UA/viewport plus anti-automation fingerprints."""
++    return browser.new_context(
++        user_agent=os.getenv('WEB_LOADER_USER_AGENT') or PLAYWRIGHT_USER_AGENT,
++        viewport={'width': 1920, 'height': 1080},
++        locale='en-US',
++        timezone_id='UTC',
++        service_workers='block',
++        extra_http_headers={'Accept-Language': 'en-US,en;q=0.9'},
++    )
++
++
+ class SafePlaywrightURLLoader(BaseLoader, RateLimitMixin, URLProcessingMixin):
+     """Load HTML pages safely with Playwright, supporting SSL verification, rate limiting, and remote browser connection.
+ 
+@@ -713,7 +741,20 @@
+     def _extract_html(html):
+         from unstructured.partition.html import partition_html
+ 
+-        return '\n\n'.join(str(element) for element in partition_html(text=html))
++        text = '\n\n'.join(str(element) for element in partition_html(text=html))
++        if text.strip():
++            return text
++
++        # unstructured returns zero elements for some large or heavily-scripted
++        # documents (e.g. GitHub's shell page) even though the HTML is complete.
++        # Fall back to a plain tree walk so the fetch does not report "empty".
++        from bs4 import BeautifulSoup
++
++        soup = BeautifulSoup(html, 'html.parser')
++        for tag in soup(['script', 'style', 'noscript']):
++            tag.decompose()
++        lines = [line.strip() for line in soup.get_text('\n').splitlines()]
++        return '\n\n'.join(line for line in lines if line)
+ 
+     def _request_timeout(self) -> float:
+         # per-hop budget, since page.goto's timeout cannot reach into our own fetch and 0 disables
+@@ -859,18 +900,20 @@
+                 browser = p.chromium.launch(headless=self.headless, proxy=self.proxy)
+ 
+             with browser:
++                context = _new_playwright_context(browser)
++                context.add_init_script(PLAYWRIGHT_INIT_SCRIPT)
+                 for url in self.urls:
+                     try:
+                         self._safe_process_url_sync(url)
+                         # opened before the page so it outlives any route still in flight at teardown
+                         with (
+                             get_ssrf_safe_requests_session(self.trust_env, store_cookies=False) as session,
+-                            browser.new_page(service_workers='block') as page,
++                            context.new_page() as page,
+                         ):
+                             page.route('**/*', lambda route: self._intercept_navigation_sync(route, session))
+                             # sync close() hangs the dispatcher; a no-op handler still never connects to the server
+                             page.route_web_socket('**/*', lambda ws_route: None)
+-                            response = page.goto(url, timeout=self.playwright_timeout)
++                            response = page.goto(url, timeout=self.playwright_timeout, wait_until='domcontentloaded')
+                             if response is None:
+                                 raise ValueError(f'page.goto() returned None for url {url}')
+ 
+@@ -900,17 +943,26 @@
+                 browser = await p.chromium.launch(headless=self.headless, proxy=self.proxy)
+ 
+             async with browser:
++                context = await browser.new_context(
++                    user_agent=os.getenv('WEB_LOADER_USER_AGENT') or PLAYWRIGHT_USER_AGENT,
++                    viewport={'width': 1920, 'height': 1080},
++                    locale='en-US',
++                    timezone_id='UTC',
++                    service_workers='block',
++                    extra_http_headers={'Accept-Language': 'en-US,en;q=0.9'},
++                )
++                await context.add_init_script(PLAYWRIGHT_INIT_SCRIPT)
+                 for url in self.urls:
+                     try:
+                         await self._safe_process_url(url)
+                         # opened before the page so it outlives any route still in flight at teardown
+                         async with (
+                             get_ssrf_safe_session(self.trust_env, store_cookies=False) as session,
+-                            await browser.new_page(service_workers='block') as page,
++                            await context.new_page() as page,
+                         ):
+                             await page.route('**/*', lambda route: self._intercept_navigation(route, session))
+                             await page.route_web_socket('**/*', lambda ws_route: ws_route.close())
+-                            response = await page.goto(url, timeout=self.playwright_timeout)
++                            response = await page.goto(url, timeout=self.playwright_timeout, wait_until='domcontentloaded')
+                             if response is None:
+                                 raise ValueError(f'page.goto() returned None for url {url}')
+ 
