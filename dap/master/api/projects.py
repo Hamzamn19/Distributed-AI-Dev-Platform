@@ -15,7 +15,9 @@ Endpoints to add (paths are relative to /api/v1, see docs/contracts/PROJECT_CONT
         Calls dap.master.core.selector; fills assigned_agent_id and
         assignment_reason.
     POST /projects/{id}/run                           -> 202 Project, 409  (Sprint 3)
-        Starts dap.master.core.orchestrator in a background thread.
+        Starts dap.master.core.orchestrator in a background thread. When agents
+        are registered and online but none is idle, the project enters the run
+        queue (Sprint 4): a watcher starts it when an agent is free again.
     GET  /projects/{id}/results                       -> 200 list[TaskResult]
     GET  /projects/{id}/files                         -> 200 list[str]
     GET  /projects/{id}/files/{path}                  -> 200 text, 404
@@ -28,6 +30,10 @@ Endpoints to add (paths are relative to /api/v1, see docs/contracts/PROJECT_CONT
         A change on the finished application (core/followup.py): one `revision`
         task over the finished tasks, then the run starts on its own. 404, 409
         while a run is going or when the application is not completed.
+    GET  /projects/{id}/export                        -> 200 zip  (Sprint 4)
+        The generated application as one zip (integrator.export_zip): the app
+        files, the helpers and acceptance.json, without .git, app.db and
+        __pycache__. 404, 409 when the project has no files yet.
 
 Status: all endpoints are done. After a successful decompose the project is "in_progress"
 (the enum has no "decomposed"); while the model works it is "decomposing".
@@ -40,13 +46,13 @@ Rules:
 
 import logging
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from fastapi.responses import PlainTextResponse
 
 from dap.master.config import get_settings
 from dap.master.core import decomposer, followup, integrator, orchestrator, preview, selector
 from dap.master.db import repositories, results
-from dap.shared.enums import ProjectStatus, TaskStatus
+from dap.shared.enums import AgentStatus, ProjectStatus, TaskStatus
 from dap.shared.schemas import FollowupCreate, Project, ProjectCreate, Task, TaskResult
 
 logger = logging.getLogger(__name__)
@@ -141,13 +147,28 @@ def assign_project(project_id: str) -> list[Task]:
 
 @router.post("/{project_id}/run", response_model=Project, status_code=202)
 def run_project(project_id: str) -> Project:
-    """Send the assigned tasks to the workers over A2A; follow /tasks for the progress."""
-    _get_project_or_404(project_id)
+    """Send the assigned tasks to the workers over A2A; follow /tasks for the progress.
+
+    When every online agent is busy, the project is queued and starts when an
+    agent is free again (Sprint 4).
+    """
+    project = _get_project_or_404(project_id)
     if not repositories.list_tasks(project_id):
         raise HTTPException(status_code=409, detail="Project has no tasks; decompose it first")
+    if orchestrator.is_running(project_id):
+        raise HTTPException(status_code=409, detail="This project is already running")
+    if orchestrator.is_queued(project_id):
+        raise HTTPException(status_code=409, detail="This project is already in the run queue")
+    repositories.mark_stale_agents_offline(get_settings().heartbeat_timeout_sec)
+    online = [a for a in repositories.list_agents() if a.status != AgentStatus.OFFLINE]
+    if online and not any(a.status == AgentStatus.IDLE for a in online):
+        orchestrator.enqueue_run(project_id)
+        results.record_event("run_queued", "all agents are busy; the run starts "
+                             "when one is free again", project_id=project_id)
+        return project
     if not orchestrator.start_run(project_id):
         raise HTTPException(status_code=409, detail="This project is already running")
-    return _get_project_or_404(project_id)
+    return project
 
 
 @router.get("/{project_id}/results", response_model=list[TaskResult])
@@ -169,6 +190,18 @@ def read_file(project_id: str, path: str) -> str:
         return integrator.read_file(project_id, path)
     except (ValueError, FileNotFoundError):
         raise HTTPException(status_code=404, detail=f"File {path!r} not found")
+
+
+@router.get("/{project_id}/export")
+def export_project(project_id: str):
+    """Download the generated application as one zip."""
+    _get_project_or_404(project_id)
+    try:
+        content, filename = integrator.export_zip(project_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=409, detail=f"Nothing to export: {exc}") from exc
+    return Response(content=content, media_type="application/zip",
+                    headers={"Content-Disposition": f'attachment; filename="{filename}"'})
 
 
 @router.post("/{project_id}/preview")

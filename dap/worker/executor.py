@@ -126,6 +126,17 @@ def check_output(payload: DapTaskPayload, output: DapTaskOutput) -> None:
 FIX_ROUNDS = 2          # extra answers the model may give after a failed check
 REPEAT_TEMPERATURE = 0.7  # for the answer after one that repeated the previous answer
 
+_stop_event = threading.Event()  # set when the running task is cancelled (A2A CancelTask)
+
+
+class TaskCanceled(Exception):
+    """The master cancelled the task while the model was working on it."""
+
+
+def cancel_requested() -> bool:
+    """True when the task the executor is running right now was cancelled."""
+    return _stop_event.is_set()
+
 # Error text -> the likely cause, in words a small model acts on. First match wins.
 HINTS: list[tuple[str, str]] = [
     ('near "WHERE": syntax error',
@@ -617,9 +628,15 @@ def _keep_rejected(payload: DapTaskPayload, round_number: int, text: str) -> Pat
 
 
 def execute(payload: DapTaskPayload) -> DapTaskOutput:
-    """Do one task with the local model (or the mock) and return its files."""
+    """Do one task with the local model (or the mock) and return its files.
+
+    Raises TaskCanceled when the master cancelled the task in the meantime: the
+    answer is thrown away and no file is written.
+    """
     if os.getenv("LLM_MOCK", "0").strip() == "1":
         time.sleep(float(os.getenv("MOCK_DELAY_SEC", "0")))
+        if cancel_requested():
+            raise TaskCanceled("cancelled by the user")
         files = [GeneratedFile(path=path, content=MOCK_FILES.get(path, f"# {path}\n"))
                  for path in payload.target_files]
         return DapTaskOutput(summary=f"Mock output for: {payload.title}", files=files)
@@ -630,6 +647,8 @@ def execute(payload: DapTaskPayload) -> DapTaskOutput:
     problem = previous = ""
     repeated = False
     for round_number in range(1 + FIX_ROUNDS):
+        if cancel_requested():
+            raise TaskCanceled("cancelled by the user")
         # plain text blocks; RuntimeError: model down
         answer = (chat(messages, json_mode=False, temperature=REPEAT_TEMPERATURE) if repeated
                   else chat(messages, json_mode=False))
@@ -643,6 +662,8 @@ def execute(payload: DapTaskPayload) -> DapTaskOutput:
         try:
             output = _read_answer(answer.text, payload)
             check_output(payload, output)
+            if cancel_requested():
+                raise TaskCanceled("cancelled by the user")
             problem = verify(payload, output) or ""
         except (ValueError, json.JSONDecodeError) as exc:
             problem = str(exc)
@@ -687,6 +708,7 @@ class Executor:
         self._lock = threading.Lock()
         self._queue: queue.Queue[str] = queue.Queue()
         self._current: str | None = None
+        self._canceled: set[str] = set()  # A2A CancelTask: stop at the next check
         threading.Thread(target=self._loop, name="executor", daemon=True).start()
 
     def submit(self, payload: DapTaskPayload, context_id: str | None) -> A2ATask:
@@ -707,6 +729,23 @@ class Executor:
         with self._lock:
             task = self._tasks.get(task_id)
             return task.model_copy(deep=True) if task else None
+
+    def cancel(self, task_id: str) -> bool:
+        """A2A CancelTask: the task stops at its next check; True when it was open.
+
+        A task that is still queued never starts. A task the model is working on
+        stops at its next round (the running model call itself finishes; its
+        answer is thrown away). A finished task cannot be cancelled.
+        """
+        with self._lock:
+            task = self._tasks.get(task_id)
+            if task is None or task.status.state in (
+                    A2ATaskState.COMPLETED, A2ATaskState.FAILED, A2ATaskState.CANCELED):
+                return False
+            self._canceled.add(task_id)
+        if self._current == task_id:
+            _stop_event.set()
+        return True
 
     def status(self) -> tuple[AgentStatus, str | None]:
         """For the heartbeat: busy with the master's task id while work is waiting."""
@@ -737,24 +776,35 @@ class Executor:
         while True:
             task_id = self._queue.get()
             payload = self._payloads[task_id]
+            if task_id in self._canceled:  # cancelled while it was still queued
+                self._set(task_id, A2ATaskState.CANCELED, error="cancelled by the user")
+                continue
             with self._lock:
                 self._current = task_id
+            _stop_event.clear()
             self._set(task_id, A2ATaskState.WORKING)
             logger.info("Working on %s (%s)", task_id, payload.title)
             start = time.perf_counter()
             try:
                 output = self._run(payload)
+                if task_id in self._canceled:  # cancelled while the model worked
+                    raise TaskCanceled("cancelled by the user")
                 check_output(payload, output)
                 if not output.duration_ms:
                     output.duration_ms = int((time.perf_counter() - start) * 1000)
                 self._set(task_id, A2ATaskState.COMPLETED, output=output)
                 logger.info("Completed %s: %s", task_id, output.summary)
+            except TaskCanceled:
+                self._set(task_id, A2ATaskState.CANCELED, error="cancelled by the user")
+                logger.info("Cancelled %s", task_id)
             except Exception as exc:  # the model, the JSON or the files: report, never crash
                 self._set(task_id, A2ATaskState.FAILED, error=f"{type(exc).__name__}: {exc}")
                 logger.error("Task %s failed: %s", task_id, exc)
             finally:
                 with self._lock:
                     self._current = None
+                _stop_event.clear()
+                self._canceled.discard(task_id)
 
 
 # ------------------------------------------- LLM_MOCK=1: a small app that really runs

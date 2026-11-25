@@ -43,12 +43,13 @@ class ProjectStatus(StrEnum):
 
 
 class A2ATaskState(StrEnum):
-    """Task states on the A2A wire (protocol v1.0); only the four we use."""
+    """Task states on the A2A wire (protocol v1.0)."""
 
     SUBMITTED = "TASK_STATE_SUBMITTED"
     WORKING = "TASK_STATE_WORKING"
     COMPLETED = "TASK_STATE_COMPLETED"
     FAILED = "TASK_STATE_FAILED"
+    CANCELED = "TASK_STATE_CANCELED"
 
 
 # How the master stores a worker's A2A task state.
@@ -57,6 +58,7 @@ A2A_TO_TASK_STATUS: dict[A2ATaskState, TaskStatus] = {
     A2ATaskState.WORKING: TaskStatus.IN_PROGRESS,
     A2ATaskState.COMPLETED: TaskStatus.COMPLETED,
     A2ATaskState.FAILED: TaskStatus.FAILED,
+    A2ATaskState.CANCELED: TaskStatus.FAILED,
 }
 
 

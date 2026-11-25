@@ -89,3 +89,12 @@ def get_task(url: str, remote_id: str, token: str) -> A2ATask:
         return A2ATask.model_validate(data)
     except ValidationError as exc:
         raise A2AError(f"bad task answer from {url}: {exc}") from exc
+
+
+def cancel_task(url: str, remote_id: str, token: str) -> None:
+    """A2A CancelTask: ask the worker to stop the task at its next check.
+
+    Best effort: a problem raises A2AError; the master's own cancel already
+    marked the task failed, so the caller may ignore it.
+    """
+    _call("POST", f"{url}/tasks/{remote_id}:cancel", token)

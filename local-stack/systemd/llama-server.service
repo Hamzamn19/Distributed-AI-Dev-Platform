@@ -1,0 +1,17 @@
+[Unit]
+Description=llama-server (gemma-4-26B GGUF) on 127.0.0.1:8080
+After=network.target
+
+[Service]
+Type=simple
+# CUDA runtime bundled with llama.cpp — WITHOUT these, libggml-cuda.so cannot
+# resolve libcudart/libcublas and llama.cpp silently falls back to CPU-only.
+Environment=LD_LIBRARY_PATH=/home/hamzah/Documents/Distributed-AI-Dev-Platform/local-stack/llama.cpp/cudart-llama-b11401-bin-ubuntu-cuda-13.4-x64:/home/hamzah/Documents/Distributed-AI-Dev-Platform/local-stack/llama.cpp/llama-b11401
+ExecStart=/home/hamzah/Documents/Distributed-AI-Dev-Platform/local-stack/llama.cpp/bin/llama-server -m /home/hamzah/Documents/Distributed-AI-Dev-Platform/local-stack/models/gemma4-26b-a4b/gemma-4-26B-A4B-it-UD-IQ2_XXS.gguf -ngl 999 -c 131072 -ctk q4_0 -ctv q4_0 -fa on -b 1024 -ub 256 --threads 12 --threads-batch 12 --jinja --spec-type ngram-mod -np 1 -lzm off -cram 4096 --metrics --no-warmup --host 127.0.0.1 --port 8080
+Restart=on-failure
+RestartSec=10
+# Give the model time to load / respond before systemd calls it failed
+TimeoutStartSec=0
+
+[Install]
+WantedBy=default.target

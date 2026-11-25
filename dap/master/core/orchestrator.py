@@ -18,15 +18,20 @@ For one run:
   is not finished after TASK_TIMEOUT_SEC or when its worker is unreachable three
   times in a row. Every result is stored (results.store_task_result) and every
   completed task is committed to workspace/<project_id>/ (integrator).
+- A worker-level failure (the model broke, bad output, timeout, unreachable
+  worker) is retried inside the run on a different agent, at most MAX_TASK_ATTEMPTS
+  attempts in total (Sprint 4); a task with no other agent left stays failed. A
+  cancelled task, a dependency failure and "no online agent" are never retried.
 - Project status: in_progress while running, then integrating, then completed
   (all tasks completed) or failed.
 - Integrating: when all tasks completed, the master runs its acceptance check
   (acceptance.py) on workspace/<project_id>/; an application that does not even
   start fails the project. The result is acceptance.json in the project folder.
 - cancel(project_id) ("Cancel" in the UI) stops a run at its next round: every task
-  not completed fails with "cancelled by the user" and the project fails. A worker
-  that is writing keeps writing until it ends (A2A CancelTask is not implemented);
-  its answer is ignored. "Run again" continues afterwards.
+  not completed fails with "cancelled by the user", the project fails, and every
+  task the master had sent is also cancelled on its worker (A2A CancelTask, best
+  effort: the worker stops the model at its next check and answers
+  TASK_STATE_CANCELED). "Run again" continues afterwards.
 - A new run ("Run again" in the UI) sends the failed tasks again, to their agent
   (or a replacement, as above); attempt counts the tries, the old error stays stored.
 Choosing another agent for a failed task within one run is Sprint 4.
@@ -42,6 +47,13 @@ run delivers the current files to the worker, and starts the run (core/followup.
 The run ends with the usual acceptance check and sets the project to completed
 or failed again; "Run again" after a failed revision sends the revision again.
 
+Run queue (Sprint 4): POST /projects/{id}/run with registered online agents but
+none idle queues the project instead of starting it at once (enqueue, below).
+A watcher thread starts the first queued project as soon as an agent is idle
+again, so several projects can be started one after another without watching
+them. `is_queued` and the queue position are for the API; "Run again" on a
+queued project answers 409, and cancel(project_id) removes it from the queue.
+
 Review note (Baran, S3 adoption of master core and api):
 - The project is completed when the application starts; failed acceptance checks are
   only reported in acceptance.json, they do not fail the project.
@@ -53,6 +65,7 @@ import logging
 import threading
 import time
 import uuid
+from collections import deque
 from dataclasses import dataclass, field
 
 from dap.master import a2a_client
@@ -63,6 +76,7 @@ from dap.shared.enums import (
     A2A_TO_TASK_STATUS,
     A2ATaskState,
     AgentStatus,
+    MAX_TASK_ATTEMPTS,
     ProjectStatus,
     TaskStatus,
     TaskType,
@@ -87,6 +101,62 @@ _cancelled: set[str] = set()  # runs asked to stop; checked once per round
 _running_lock = threading.Lock()
 CANCELLED = "cancelled by the user"
 
+# Projects waiting for a free agent (Sprint 4): the watcher starts them in order.
+_queue: deque[str] = deque()
+_queue_lock = threading.Lock()
+_watcher: threading.Thread | None = None
+
+
+def is_queued(project_id: str) -> bool:
+    with _queue_lock:
+        return project_id in _queue
+
+
+def queue_position(project_id: str) -> int | None:
+    """1-based position in the run queue, or None when it is not queued."""
+    with _queue_lock:
+        try:
+            return list(_queue).index(project_id) + 1
+        except ValueError:
+            return None
+
+
+def enqueue_run(project_id: str) -> bool:
+    """Put a project in the run queue; False when it is queued already.
+
+    Starts the watcher thread on the first project (daemon; it polls until the
+    queue is empty, so it ends by itself).
+    """
+    global _watcher
+    with _queue_lock:
+        if project_id in _queue:
+            return False
+        _queue.append(project_id)
+    if _watcher is None or not _watcher.is_alive():
+        _watcher = threading.Thread(target=_watch_queue, name="run-queue", daemon=True)
+        _watcher.start()
+    return True
+
+
+def _watch_queue() -> None:
+    """Start queued projects while an agent is idle; the thread ends with the queue."""
+    while True:
+        with _queue_lock:
+            if not _queue:
+                return
+        repositories.mark_stale_agents_offline(get_settings().heartbeat_timeout_sec)
+        idle = [a for a in repositories.list_agents() if a.status == AgentStatus.IDLE]
+        if not idle:
+            time.sleep(min(get_settings().a2a_poll_interval_sec, 2.0))
+            continue
+        with _queue_lock:  # a cancel may have emptied the queue in the meantime
+            project_id = _queue.popleft() if _queue else None
+        if project_id is None:
+            continue
+        results.record_event("run_started_from_queue", "an agent is free again",
+                             project_id=project_id)
+        start_run(project_id)
+
 
 def is_running(project_id: str) -> bool:
     with _running_lock:
@@ -98,7 +168,12 @@ def cancel(project_id: str) -> bool:
 
     A running project stops at its next round. A project whose run is gone (the
     master was restarted half way) gets its unfinished tasks and itself set to failed.
+    A queued project leaves the queue (nothing else to stop).
     """
+    with _queue_lock:
+        if project_id in _queue:
+            _queue.remove(project_id)
+            return True
     with _running_lock:
         if project_id in _running:
             _cancelled.add(project_id)
@@ -197,6 +272,10 @@ def run_project(project_id: str, *, client=a2a_client, poll_interval: float | No
             stop = project_id in _cancelled
         if stop:
             for task_id, sent in list(run.sent.items()):
+                try:  # A2A CancelTask: stop the model on the worker, best effort
+                    run.client.cancel_task(sent.agent.a2a_url, sent.remote_id, run.token)
+                except a2a_client.A2AError:
+                    pass
                 _fail(run, repositories.get_task(task_id), sent.agent.agent_id, CANCELLED, sent)
             for task in list(run.waiting.values()):
                 _fail(run, task, task.assigned_agent_id, CANCELLED)
@@ -372,8 +451,22 @@ def _complete(run: _Run, task: Task, sent: _Sent, remote: A2ATask) -> None:
 
 def _fail(run: _Run, task: Task, agent_id: str | None, error: str,
           sent: _Sent | None = None) -> None:
-    """Mark the task failed and store the reason as a failed result when it has an agent."""
+    """Mark the task failed; the reason is stored as a failed result when final.
+
+    A worker-level failure is retried in the run on a different agent (Sprint 4),
+    while the task has attempts left and another usable agent exists: the task
+    goes back into the waiting queue with the new agent, the stored failure is
+    only an event (the final result of this run is stored when the last try also
+    fails), and the tasks that depend on it wait (their dependency is not finally
+    failed yet).
+    """
     run.status[task.id] = TaskStatus.FAILED
+    if _retry_on_other_agent(run, task, agent_id, error, sent):
+        repositories.set_task_status(task.id, TaskStatus.FAILED)
+        results.record_event("task_failed", error, task_id=task.id)
+        run.status[task.id] = TaskStatus.ASSIGNED  # the dependents wait for the retry
+        logger.warning("Task %s failed (retrying): %s", task.title, error)
+        return
     current = repositories.get_task(task.id)
     if agent_id and current is not None and current.assigned_agent_id == agent_id \
             and current.status in (TaskStatus.ASSIGNED, TaskStatus.IN_PROGRESS):
@@ -386,3 +479,33 @@ def _fail(run: _Run, task: Task, agent_id: str | None, error: str,
         repositories.set_task_status(task.id, TaskStatus.FAILED)
         results.record_event("task_failed", error, task_id=task.id)
     logger.warning("Task %s failed: %s", task.title, error)
+
+
+def _retry_on_other_agent(run: _Run, task: Task, agent_id: str | None,
+                          error: str, sent: _Sent | None) -> bool:
+    """Send the failed task again on another agent within the same run; False when not.
+
+    Only worker-level failures are retried (the model broke, bad output, timeout,
+    unreachable worker, could not send); never cancelled tasks, dependency
+    failures or "no online agent". The attempts total MAX_TASK_ATTEMPTS.
+    """
+    with _running_lock:
+        cancelled = run.project_id in _cancelled
+    worker_failure = sent is not None or error.startswith("could not send")
+    if cancelled or error == CANCELLED or not worker_failure \
+            or task.attempt >= MAX_TASK_ATTEMPTS:
+        return False
+    repositories.mark_stale_agents_offline(get_settings().heartbeat_timeout_sec)
+    candidates = [a for a in repositories.list_agents()
+                  if _usable(a) and a.agent_id != agent_id]
+    choice = selector.select_agent(task, candidates)
+    if choice is None:
+        return False
+    new_agent, reason = choice
+    repositories.assign_task(task.id, new_agent.agent_id,
+                             f"retry after: {error} ({reason})")
+    run.waiting[task.id] = repositories.get_task(task.id)
+    results.record_event("task_retry", f"attempt {task.attempt + 1} on {new_agent.agent_id}: "
+                         f"{error}", task_id=task.id)
+    logger.info("Task %s retried on %s", task.title, new_agent.agent_id)
+    return True

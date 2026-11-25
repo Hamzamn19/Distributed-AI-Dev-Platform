@@ -229,7 +229,9 @@ def test_a_failed_revision_can_be_run_again(db):
     assert orchestrator.run_project(pid, client=again, poll_interval=0) == ProjectStatus.COMPLETED
     assert [p.type.value for _, p in again.sent] == ["revision"]
     tries = repositories.list_tasks(pid)[-1]
-    assert tries.attempt == 2
+    # Sprint 4: the broken run already retried the revision within the run (3 attempts),
+    # so "Run again" makes attempt 4.
+    assert tries.attempt == 4
     assert [t.status for t in repositories.list_tasks(pid)] == [TaskStatus.COMPLETED] * 5
 
 

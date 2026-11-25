@@ -89,6 +89,7 @@ class FakeA2A:
         self.tasks: dict[str, list] = {}
         self.events: list[tuple[str, str]] = []
         self.sent = []
+        self.cancelled: list[str] = []
 
     def send_task(self, url, payload, token):
         remote_id = f"remote-{len(self.sent)}"
@@ -96,6 +97,9 @@ class FakeA2A:
         self.tasks[remote_id] = [payload, 0]
         self.events.append(("send", payload.type.value))
         return A2ATask(id=remote_id, status=TaskStatusA2A(state=A2ATaskState.SUBMITTED))
+
+    def cancel_task(self, url, remote_id, token):
+        self.cancelled.append(remote_id) if hasattr(self, "cancelled") else None
 
     def get_task(self, url, remote_id, token):
         payload, asked = self.tasks[remote_id]
@@ -178,7 +182,9 @@ def test_a_second_run_sends_the_failed_tasks_again(db):
     assert [p.type.value for _, p in again.sent] == ["database", "backend", "frontend", "testing"]
     assert set(statuses(pid).values()) == {TaskStatus.COMPLETED}
     tries = {t.type.value: t.attempt for t in repositories.list_tasks(pid)}
-    assert tries == {"database": 2, "backend": 1, "frontend": 1, "testing": 1}
+    # Sprint 4: the first run retried the database task within the run (attempts 1-3,
+    # always the same failure), so "Run again" makes attempt 4.
+    assert tries == {"database": 4, "backend": 1, "frontend": 1, "testing": 1}
 
 
 def test_a_failed_dependency_fails_the_tasks_after_it(db):
@@ -186,7 +192,8 @@ def test_a_failed_dependency_fails_the_tasks_after_it(db):
     pid, _ = project(*APP)
     fake = FakeA2A(fail=("database",))
     assert orchestrator.run_project(pid, client=fake, poll_interval=0) == ProjectStatus.FAILED
-    assert [p.type.value for _, p in fake.sent] == ["database"]
+    # Sprint 4: the run retries the database task on the other agent, 3 attempts in total.
+    assert [p.type.value for _, p in fake.sent] == ["database"] * 3
     assert set(statuses(pid).values()) == {TaskStatus.FAILED}
     errors = {r.error for r in results.list_project_results(pid)}
     assert errors == {"model broke", "dependency failed"}
@@ -353,7 +360,10 @@ def test_parallel_mode_starts_testing_while_frontend_still_runs(db, monkeypatch)
     fake = FakeA2A(never=("frontend",))
     status = orchestrator.run_project(pid, client=fake, poll_interval=0, task_timeout=0.1)
     sent_types = [p.type.value for _, p in fake.sent]
-    assert sent_types == ["database", "backend", "frontend", "testing"]
+    # The frontend was still working when the testing task was sent. Sprint 4: the
+    # frontend timeouts are retried on the other agent, 3 attempts in total.
+    assert sent_types[:4] == ["database", "backend", "frontend", "testing"]
+    assert sent_types.count("frontend") == 3
     # The frontend was still working when the testing task was sent.
     assert fake.events.count(("done", "frontend")) == 0
     assert status in (ProjectStatus.FAILED,)
