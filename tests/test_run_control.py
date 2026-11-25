@@ -515,3 +515,7 @@ def test_the_master_live_endpoint_proxies_the_worker(db, monkeypatch):
     assert answer.status_code == 200
     (entry,) = answer.json()
     assert entry["type"] == "revision" and entry["generated_tokens"] == 120
+
+    # a task that stopped generating between polls is skipped, not shown broken
+    monkeypatch.setattr(a2a_client, "get_progress", lambda url, remote_id, token: {})
+    assert client.get(f"/api/v1/projects/{pid}/live").json() == []

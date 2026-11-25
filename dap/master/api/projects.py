@@ -231,6 +231,8 @@ def live_progress(project_id: str) -> list[dict]:
                                                get_settings().agent_token)
         except a2a_client.A2AError:
             continue  # an unreachable worker shows nothing, it does not fail the page
+        if "round" not in progress:
+            continue  # the task stopped generating between polls: nothing live to show
         live.append({"task_id": task.id, "type": task.type.value,
                      "agent": agent.agent_id, **progress})
     return live
