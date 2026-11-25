@@ -81,6 +81,9 @@ class ProjectCreate(ContractModel):
     requirement_text: str = Field(
         min_length=MIN_REQUIREMENT_LENGTH, max_length=MAX_REQUIREMENT_LENGTH
     )
+    # One of the visual styles of templates/webapp/frontend/style.css; the frontend
+    # task builds the page in it (default modern).
+    style: str = Field(default="modern", pattern="modern|midnight|warm|forest|mono")
 
 
 class Project(ContractModel):
@@ -88,6 +91,7 @@ class Project(ContractModel):
     name: str
     requirement_text: str
     status: ProjectStatus
+    style: str = "modern"
     created_at: AwareDatetime
     updated_at: AwareDatetime
 

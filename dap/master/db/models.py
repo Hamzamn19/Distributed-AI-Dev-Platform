@@ -67,6 +67,8 @@ class ProjectModel(Base):
     name: Mapped[str] = mapped_column(String)
     requirement_text: Mapped[str] = mapped_column(Text)
     status: Mapped[ProjectStatus] = mapped_column(enum_column(ProjectStatus, "project_status"))
+    # The visual style of the application (style.css themes; default modern).
+    style: Mapped[str] = mapped_column(String, default="modern", server_default="modern")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
     updated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
 

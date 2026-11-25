@@ -115,7 +115,7 @@ def _extract_json(text: str) -> dict:
         return json.loads(text[start : end + 1])
 
 
-def _to_task_creates(data: object) -> list[TaskCreate]:
+def _to_task_creates(data: object, style: str = "modern") -> list[TaskCreate]:
     """Validate the model's answer and turn it into TaskCreate objects.
 
     Raises ValueError when the answer cannot be used.
@@ -153,6 +153,12 @@ def _to_task_creates(data: object) -> list[TaskCreate]:
     records = [str(r).strip() for r in data.get("records") or [] if str(r).strip()][:12]
     covers = f"\nRecords: {', '.join(records)}. This task covers all of them." if records else ""
 
+    # The chosen visual style rides on the frontend task's description (style.css themes).
+    style_line = ""
+    if style != "modern":
+        style_line = (f"\nVisual style: {style}. Set data-theme=\"{style}\" on the <html> tag "
+                      "and shape the page for that theme's mood (style.css does the colors).")
+
     # One task per type, in the fixed order, with the fixed dependencies.
     by_type = {TaskType(kind): raw for kind, raw in zip(types, raw_tasks)}
     type_ids = {kind: str(uuid.uuid4()) for kind in ORDER}
@@ -163,15 +169,20 @@ def _to_task_creates(data: object) -> list[TaskCreate]:
         tasks.append(TaskCreate(
             id=type_ids[kind],
             title=title,
-            description=str(raw.get("description") or title).strip() + covers,
+            description=str(raw.get("description") or title).strip() + covers
+                        + (style_line if kind == TaskType.FRONTEND else ""),
             type=kind,
             depends_on=[type_ids[dep] for dep in DEPENDS_ON[kind]],
         ))
     return tasks
 
 
-def decompose(requirement_text: str) -> list[TaskCreate]:
-    """Break a requirement into four tasks: database, backend, frontend, testing."""
+def decompose(requirement_text: str, style: str = "modern") -> list[TaskCreate]:
+    """Break a requirement into four tasks: database, backend, frontend, testing.
+
+    style names the visual style of the application (a style.css theme); it rides
+    on the frontend task's description.
+    """
     messages = [
         {"role": "system", "content": SYSTEM_PROMPT},
         {"role": "user", "content": f"Requirement:\n{requirement_text.strip()}"},
@@ -179,7 +190,7 @@ def decompose(requirement_text: str) -> list[TaskCreate]:
     for attempt in range(1, ATTEMPTS + 1):
         answer = chat(messages, json_mode=True)  # RuntimeError when the model is down
         try:
-            return _to_task_creates(_extract_json(answer.text))
+            return _to_task_creates(_extract_json(answer.text), style)
         except (ValueError, json.JSONDecodeError) as exc:
             logger.warning("Decomposition attempt %d/%d unusable: %s", attempt, ATTEMPTS, exc)
             messages.append({"role": "assistant", "content": answer.text})
@@ -189,4 +200,4 @@ def decompose(requirement_text: str) -> list[TaskCreate]:
                            "Answer again with JSON only, following the shape exactly.",
             })
     logger.warning("Using the fixed fallback template (%d tasks)", len(FALLBACK_TASKS))
-    return _to_task_creates({"tasks": FALLBACK_TASKS})
+    return _to_task_creates({"tasks": FALLBACK_TASKS}, style)

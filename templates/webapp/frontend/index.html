@@ -8,6 +8,11 @@
   ready helpers. Both are ready parts of the template: do not write them again.
   Relies on: the /api routes of backend/main.py.
 
+  Visual style: the frontend task's description names one of the five themes of
+  style.css (modern, midnight, warm, forest, mono). Keep that theme on the
+  <html> tag (data-theme="...", modern when the description names none) and shape
+  the page for its mood; style.css does the rest. Do not write your own colors.
+
   Rules for the HTML (<things> is a record name of the requirement, in plural):
   - Keep the <head>, the header with id="nav" (one <a href="#section-..."> per section),
     <p id="message">, the lib.js script line and the last <script> block.
@@ -47,7 +52,7 @@
   - Call only routes of backend/main.py, with relative paths. After every change load the
     lists and /api/stats again. Load everything at start.
 -->
-<html lang="en">
+<html lang="en" data-theme="modern">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">

@@ -53,6 +53,7 @@ def _project(record: ProjectModel) -> Project:
         name=record.name,
         requirement_text=record.requirement_text,
         status=record.status,
+        style=record.style or "modern",
         created_at=_utc(record.created_at),
         updated_at=_utc(record.updated_at),
     )
@@ -147,6 +148,7 @@ def create_project(data: ProjectCreate) -> Project:
             name=data.name,
             requirement_text=data.requirement_text,
             status=ProjectStatus.CREATED,
+            style=data.style,
             created_at=now,
             updated_at=now,
         )

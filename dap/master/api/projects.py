@@ -101,7 +101,7 @@ def decompose_project(project_id: str) -> list[Task]:
 
     repositories.set_project_status(project_id, ProjectStatus.DECOMPOSING)
     try:
-        task_creates = decomposer.decompose(project.requirement_text)
+        task_creates = decomposer.decompose(project.requirement_text, project.style)
     except RuntimeError as exc:
         logger.error("Decomposition of project %s failed: %s", project_id, exc)
         repositories.set_project_status(project_id, ProjectStatus.FAILED)

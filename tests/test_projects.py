@@ -29,9 +29,16 @@ def test_create_project_returns_contract_project():
 @pytest.mark.parametrize("body", [
     {"name": "x", "requirement_text": "short"},
     {"name": "x"},
+    {"name": "x", "requirement_text": "x" * 40, "style": "neon"},  # unknown style
 ])
 def test_create_project_rejects_bad_body(body):
     assert client.post("/api/v1/projects", json=body).status_code == 422
+
+
+def test_create_project_keeps_the_chosen_visual_style():
+    body = client.post("/api/v1/projects", json={
+        "name": "styled", "requirement_text": "x" * 40, "style": "forest"}).json()
+    assert body["style"] == "forest"
 
 
 def test_list_and_get_project():
@@ -80,7 +87,7 @@ def test_decompose_twice_returns_existing_tasks():
 
 
 def test_unreachable_model_fails_project_with_502(monkeypatch):
-    def down(requirement_text):
+    def down(requirement_text, style="modern"):
         raise RuntimeError("LLM did not answer")
 
     monkeypatch.setattr(projects.decomposer, "decompose", down)

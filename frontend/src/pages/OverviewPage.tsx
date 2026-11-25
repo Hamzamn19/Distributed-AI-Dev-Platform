@@ -70,6 +70,7 @@ export default function OverviewPage() {
 
   const [name, setName] = useState("");
   const [text, setText] = useState("");
+  const [style, setStyle] = useState("modern");
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState<string | null>(null);
   const length = text.trim().length;
@@ -82,7 +83,7 @@ export default function OverviewPage() {
     setSubmitting(true);
     setFormError(null);
     try {
-      const project = await createProject({ name: name.trim(), requirement_text: text.trim() });
+      const project = await createProject({ name: name.trim(), requirement_text: text.trim(), style });
       navigate(`/projects/${project.id}`);
     } catch (e) {
       setFormError(e instanceof Error ? e.message : String(e));
@@ -148,6 +149,18 @@ export default function OverviewPage() {
                 placeholder="An online library where members can search and borrow books..."
                 className="input min-h-40"
               />
+            </div>
+            <div>
+              <label htmlFor="style" className="mb-1 block text-sm font-medium text-ink">
+                Visual style
+              </label>
+              <select id="style" value={style} onChange={(e) => setStyle(e.target.value)} className="input">
+                <option value="modern">Modern — clean light with a blue gradient</option>
+                <option value="midnight">Midnight — deep dark with neon accents</option>
+                <option value="warm">Warm — cream and orange, soft and rounded</option>
+                <option value="forest">Forest — fresh green and teal</option>
+                <option value="mono">Mono — strict black and white, terminal feel</option>
+              </select>
             </div>
             <div className="flex flex-wrap items-center justify-between gap-3">
               <span className="text-xs text-muted" role={formError ? "alert" : undefined}>

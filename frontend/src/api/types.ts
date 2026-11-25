@@ -54,6 +54,7 @@ export interface Agent {
 export interface ProjectCreate {
   name: string;
   requirement_text: string; // 20 to 12 000 characters, otherwise HTTP 422
+  style?: string; // one of the style.css themes; default modern
 }
 
 export interface Project {
@@ -61,6 +62,7 @@ export interface Project {
   name: string;
   requirement_text: string;
   status: ProjectStatus;
+  style?: string; // the visual style of the generated app (style.css theme)
   created_at: string;
   updated_at: string;
 }

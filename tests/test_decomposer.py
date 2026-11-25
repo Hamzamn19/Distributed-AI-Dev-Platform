@@ -6,7 +6,7 @@ import uuid
 import pytest
 
 from dap.master.core import decomposer
-from dap.shared.enums import SPRINT1_TASK_TYPES
+from dap.shared.enums import SPRINT1_TASK_TYPES, TaskType
 from dap.shared.schemas import LLMResponse, TaskCreate
 
 REQUIREMENT = "A library app where members borrow and return books."
@@ -130,3 +130,14 @@ def test_descriptions_stay_as_they_are_without_records(monkeypatch):
     monkeypatch.setattr(decomposer, "chat", lambda *a, **k: _answer(text))
     tasks = decomposer.decompose(REQUIREMENT)
     assert "Records:" not in " ".join(t.description for t in tasks)
+
+
+def test_the_visual_style_rides_on_the_frontend_task(monkeypatch):
+    monkeypatch.setattr(decomposer, "chat", lambda *a, **k: _answer(
+        json.dumps({"tasks": decomposer.FALLBACK_TASKS})))
+    (frontend,) = [t for t in decomposer.decompose(REQUIREMENT, "midnight")
+                   if t.type == TaskType.FRONTEND]
+    assert 'data-theme="midnight"' in frontend.description
+    (frontend_default,) = [t for t in decomposer.decompose(REQUIREMENT)
+                           if t.type == TaskType.FRONTEND]
+    assert "data-theme" not in frontend_default.description
