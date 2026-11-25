@@ -206,8 +206,9 @@ def _chat_streaming(client, kwargs: dict, base_url: str, model: str,
         piece = chunk.choices[0].delta.content or ""
         if piece:
             text_parts.append(piece)
-            on_chunk(len(text_parts) and sum(len(p) for p in text_parts) // 4,
-                     "".join(text_parts)[-400:])
+            text = "".join(text_parts)
+            # the full answer so far: the caller derives the current file and the tail
+            on_chunk(len(text) // 4, text)
     text = "".join(text_parts)
     completion_tokens = usage.completion_tokens if usage else max(len(text) // 4, 1)
     return LLMResponse(

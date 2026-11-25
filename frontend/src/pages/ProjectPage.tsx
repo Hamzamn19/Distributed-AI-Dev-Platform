@@ -258,21 +258,8 @@ export default function ProjectPage() {
             <p className="text-sm font-semibold text-ink">
               Writing now {live.length > 1 ? `(${live.length} tasks)` : ""}
             </p>
-            <span className="text-xs text-muted">updates every few seconds</span>
+            <span className="text-xs text-muted">open a task above to watch it write</span>
           </div>
-          {live.map((entry) => (
-            <div key={entry.task_id} className="mt-3 rounded-md bg-surface p-3" style={{ fontFamily: "var(--font-mono, monospace)" }}>
-              <div className="flex flex-wrap items-center gap-2 text-xs text-muted" style={{ fontFamily: "var(--font-sans, sans-serif)" }}>
-                <Badge value={entry.type} />
-                <span>{entry.agent}</span>
-                <span>· round {entry.round}</span>
-                <span>· {entry.generated_tokens.toLocaleString()} tokens</span>
-              </div>
-              <pre className="mt-2 max-h-40 overflow-hidden whitespace-pre-wrap break-words text-xs leading-relaxed text-ink">
-                {entry.tail || "thinking…"}
-              </pre>
-            </div>
-          ))}
         </section>
       )}
 
@@ -359,7 +346,7 @@ export default function ProjectPage() {
 
       <Card title="Steps" description="Each task is written by one agent, in this order; the master checks the result at the end. Hover a value for details.">
         {hasTasks ? (
-          <Pipeline tasks={tasks} results={latest} agents={agents} acceptance={acceptance} projectStatus={project.status} />
+          <Pipeline tasks={tasks} results={latest} agents={agents} acceptance={acceptance} projectStatus={project.status} live={live} />
         ) : (
           <p className="text-sm text-muted">No tasks yet. Press "Decompose" above.</p>
         )}

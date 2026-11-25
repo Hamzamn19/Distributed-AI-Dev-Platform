@@ -418,6 +418,19 @@ def _settings(poll: float):
 # -------------------------------------------------------- (streaming) live writing
 
 
+def test_the_live_report_tracks_the_current_file_and_the_tail():
+    executor_module._live_start("t9", "backend")
+    report = executor_module._live_report(2, "backend")
+    report(30, "intro\n=== FILE: backend/api.py ===\nimport fastapi\n...code code")
+    progress = executor_module.live_progress("t9")
+    assert progress["current_file"] == "backend/api.py"
+    assert progress["generated_tokens"] == 30
+    assert progress["tail"].endswith("code")
+    report(40, "=== FILE: backend/database.py ===\nCREATE TABLE")
+    assert executor_module.live_progress("t9")["current_file"] == "backend/database.py"
+    executor_module._live_end()
+
+
 def test_the_worker_reports_the_writing_progress_of_a_running_task(db, monkeypatch):
     """The on_chunk callback of chat() fills the executor's live view while the task runs."""
     import dap.shared.llm_client as llm

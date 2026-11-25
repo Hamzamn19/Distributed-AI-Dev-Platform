@@ -129,6 +129,7 @@ export interface LiveProgress {
   agent: string;
   round: number;
   generated_tokens: number;
+  current_file: string | null;
   tail: string;
 }
 

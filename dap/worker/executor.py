@@ -141,12 +141,20 @@ _live: dict = {}  # the model's writing progress of the current task (A2A progre
 
 
 def _live_report(round_number: int, task_type: str):
-    """The on_chunk callback for the current task's model call (streaming)."""
+    """The on_chunk callback for the current task's model call (streaming).
 
-    def report(generated_tokens: int, tail: str) -> None:
+    chat() reports the whole answer so far; from it we keep the current file
+    (the last '=== FILE: ... ===' marker) and the last 600 characters.
+    """
+    marker = re.compile(r"=== FILE: *(?P<path>[^\s=]+) *===")
+
+    def report(generated_tokens: int, text: str) -> None:
+        current = None
+        for match in marker.finditer(text):
+            current = match.group(1)
         with _live_lock:
             _live.update(round=round_number, type=task_type, generated_tokens=generated_tokens,
-                         tail=tail)
+                         current_file=current, tail=text[-600:])
 
     return report
 
@@ -162,7 +170,8 @@ def live_progress(task_id: str) -> dict:
 def _live_start(task_id: str, task_type: str) -> None:
     with _live_lock:
         _live.clear()
-        _live.update(task_id=task_id, type=task_type, round=0, generated_tokens=0, tail="")
+        _live.update(task_id=task_id, type=task_type, round=0, generated_tokens=0,
+                     current_file=None, tail="")
 
 
 def _live_end() -> None:

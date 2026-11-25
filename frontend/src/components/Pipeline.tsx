@@ -1,5 +1,7 @@
 import type { ReactNode } from "react";
+import { useState } from "react";
 import type { AcceptanceReport } from "../api/acceptance";
+import type { LiveProgress } from "../api/client";
 import type { Agent, Task, TaskResult } from "../api/types";
 import { duration, tokens } from "../lib/format";
 import Badge from "./Badge";
@@ -14,17 +16,26 @@ export default function Pipeline({
   agents,
   acceptance,
   projectStatus,
+  live,
 }: {
   tasks: Task[];
   results: Map<string, TaskResult>;
   agents: Agent[];
   acceptance: AcceptanceReport | null;
   projectStatus: string;
+  live: LiveProgress[];
 }) {
   return (
     <ol className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
       {tasks.map((task, i) => (
-        <TaskStep key={task.id} number={i + 1} task={task} result={results.get(task.id)} agents={agents} />
+        <TaskStep
+          key={task.id}
+          number={i + 1}
+          task={task}
+          result={results.get(task.id)}
+          agents={agents}
+          liveEntry={live.find((entry) => entry.task_id === task.id)}
+        />
       ))}
       <CheckStep number={tasks.length + 1} report={acceptance} projectStatus={projectStatus} />
     </ol>
@@ -46,10 +57,17 @@ function scoreText(reason: string): string {
   return score ? `Chosen with score ${Math.round(Number(score[1]))} · hover for why` : reason;
 }
 
-function TaskStep({ number, task, result, agents }: { number: number; task: Task; result?: TaskResult; agents: Agent[] }) {
+function TaskStep({ number, task, result, agents, liveEntry }: {
+  number: number;
+  task: Task;
+  result?: TaskResult;
+  agents: Agent[];
+  liveEntry?: LiveProgress;
+}) {
   const agent = agents.find((a) => a.agent_id === (result?.agent_id ?? task.assigned_agent_id));
   const color = TYPE_COLOR[task.type] ?? "var(--muted)";
   const seconds = result ? result.duration_ms / 1000 : 0;
+  const [open, setOpen] = useState(true);
   return (
     <li className="card flex min-w-0 flex-col gap-3 border-t-4 p-4" style={{ borderTopColor: color }}>
       <div className="flex items-start justify-between gap-2">
@@ -77,6 +95,27 @@ function TaskStep({ number, task, result, agents }: { number: number; task: Task
         <p className="mt-auto truncate text-xs text-muted" title={`Why this agent (the master's score): ${task.assignment_reason}`}>
           {scoreText(task.assignment_reason)}
         </p>
+      )}
+      {liveEntry && (
+        <div className="rounded-md border border-line bg-surface p-2">
+          <button
+            type="button"
+            onClick={() => setOpen(!open)}
+            className="flex w-full items-center justify-between gap-2 text-left text-xs font-semibold text-ink"
+          >
+            <span className="min-w-0 truncate">
+              ✍ Writing: {liveEntry.current_file ?? "thinking…"}
+            </span>
+            <span className="shrink-0 text-muted">
+              {open ? "▾" : "▸"} {liveEntry.generated_tokens.toLocaleString()} tok
+            </span>
+          </button>
+          {open && (
+            <pre className="mt-2 max-h-48 overflow-y-auto whitespace-pre-wrap break-words text-[11px] leading-relaxed text-ink" style={{ fontFamily: "var(--font-mono, monospace)" }}>
+              {liveEntry.tail || "…"}
+            </pre>
+          )}
+        </div>
       )}
     </li>
   );
