@@ -10,9 +10,9 @@ kod yazar ve sonucu geri gönderir. Master ve diğer worker'lar aynı Tailscale 
 | --- | --- |
 | Kullanıcı | Fatma |
 | Ajan kimliği | `agent-fatma` (Fatma-PC) |
-| Model | `qwen3:4b` (Ollama) |
+| Model | `qwen2.5-coder:3b` (Ollama) |
 | Tercih ettiği görev | frontend |
-| Yetenek puanları | coding 50, reasoning 50, context 50 |
+| Yetenek puanları | coding 55, reasoning 30, context 50 |
 | Kod | https://github.com/Tilhium/dap_test (özel repo) |
 | Ayar dosyası | Okan'ın ayrıca gönderdiği `.env.for-fatma` |
 
@@ -59,12 +59,18 @@ Bundan sonraki bütün komutlar **`dap_test` klasöründe, sanal ortam açıkken
 1. Ollama açık olmalı (`ollama --version`). Kurulu değilse kullanıcıdan https://ollama.com adresinden kurmasını iste.
 2. Modeli indir (birkaç GB, zaman alabilir):
    ```bash
-   ollama pull qwen3:4b
-   ollama list        # listede tam olarak "qwen3:4b" görünmeli
+   ollama pull qwen2.5-coder:3b
+   ollama list        # listede tam olarak "qwen2.5-coder:3b" görünmeli
    ```
-3. Modeli belleğe yükle; ilk görev daha hızlı başlar:
+3. **Bağlam penceresini büyüt (önemli).** Ollama varsayılan olarak küçük bir bağlam kullanır ve uzun prompt'un başını
+   sessizce keser; model talimatları kaybeder ve kodu yanlış yazar. Kullanıcıdan onay alarak:
+   - **Windows** (PowerShell):  `setx OLLAMA_CONTEXT_LENGTH 12288`
+   - **macOS:**  `launchctl setenv OLLAMA_CONTEXT_LENGTH 12288`
+   - **Linux (systemd):**  `sudo systemctl edit ollama` → `[Service]` altına `Environment="OLLAMA_CONTEXT_LENGTH=12288"`
+   Sonra **Ollama'yı tamamen kapatıp yeniden aç** (Windows'ta görev çubuğundaki Ollama simgesi → Quit, sonra yeniden başlat).
+4. Modeli belleğe yükle; ilk görev daha hızlı başlar:
    ```bash
-   ollama run qwen3:4b "Say OK"
+   ollama run qwen2.5-coder:3b "Say OK"
    ```
 
 ## 4. Ayar dosyasını yerleştir
@@ -77,7 +83,7 @@ Okan kullanıcıya ayrıca **`.env.for-fatma`** adlı bir dosya gönderdi (Whats
 3. İçeriği yazdırmadan kontrol et. Yalnızca şu satırları göstermek serbest:
    - `AGENT_ID=agent-fatma`
    - `MASTER_URL=...` (değer `http://100.` ile başlamalı, `:8000` ile bitmeli)
-   - `LLM_MODEL=qwen3:4b`
+   - `LLM_MODEL=qwen2.5-coder:3b`
    - `LLM_MOCK=0`
 4. `git status` çıktısında `.env` **görünmemeli** (git dışında tutulur).
 

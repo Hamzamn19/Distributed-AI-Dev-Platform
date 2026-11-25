@@ -12,7 +12,7 @@ kod yazar ve sonucu geri gönderir. Master ve diğer worker'lar aynı Tailscale 
 | Ajan kimliği | `agent-abdurrahman` (Abdurrahman-PC) |
 | Model | `qwen3:4b` (Ollama) |
 | Tercih ettiği görev | testing |
-| Yetenek puanları | coding 50, reasoning 50, context 50 |
+| Yetenek puanları | coding 65, reasoning 75, context 70 |
 | Kod | https://github.com/Tilhium/dap_test (özel repo) |
 | Ayar dosyası | Okan'ın ayrıca gönderdiği `.env.for-abdurrahman` |
 
@@ -62,7 +62,13 @@ Bundan sonraki bütün komutlar **`dap_test` klasöründe, sanal ortam açıkken
    ollama pull qwen3:4b
    ollama list        # listede tam olarak "qwen3:4b" görünmeli
    ```
-3. Modeli belleğe yükle; ilk görev daha hızlı başlar:
+3. **Bağlam penceresini büyüt (önemli).** Ollama varsayılan olarak küçük bir bağlam kullanır ve uzun prompt'un başını
+   sessizce keser; model talimatları kaybeder ve kodu yanlış yazar. Kullanıcıdan onay alarak:
+   - **Windows** (PowerShell):  `setx OLLAMA_CONTEXT_LENGTH 12288`
+   - **macOS:**  `launchctl setenv OLLAMA_CONTEXT_LENGTH 12288`
+   - **Linux (systemd):**  `sudo systemctl edit ollama` → `[Service]` altına `Environment="OLLAMA_CONTEXT_LENGTH=12288"`
+   Sonra **Ollama'yı tamamen kapatıp yeniden aç** (Windows'ta görev çubuğundaki Ollama simgesi → Quit, sonra yeniden başlat).
+4. Modeli belleğe yükle; ilk görev daha hızlı başlar:
    ```bash
    ollama run qwen3:4b "Say OK"
    ```

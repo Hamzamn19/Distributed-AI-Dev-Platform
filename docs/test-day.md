@@ -18,7 +18,13 @@ Bir gereksinimden uygulama üretilir ve master uygulamayı kendisi test eder.
 1. **Tailscale** açık ve ekip ağına girilmiş olmalı. Adresini gör: `tailscale ip -4`.
 2. **Model hazır** olmalı: Ollama kullananlar Ollama'yı açar ve `ollama pull <model>`
    yapar. Hamza `llama-server`'ı 8080 portunda modeliyle açık tutar.
-3. **Kod:**
+   **Bağlam penceresi en az 12288 token olmalı**; yoksa uzun prompt'un başı sessizce kesilir
+   ve model talimatları kaybeder. Windows: `setx OLLAMA_CONTEXT_LENGTH 12288`, macOS:
+   `launchctl setenv OLLAMA_CONTEXT_LENGTH 12288`, sonra Ollama'yı kapatıp yeniden açın.
+   Hamza: `llama-server ... -c 12288`.
+3. **`scripts/seed_agents.py` çalıştırmayın.** Worker'lar kendileri kaydolur; bu script
+   (eski sürümde) çalışan worker'ların A2A adreslerini siliyordu.
+4. **Kod:**
    ```bash
    git clone https://github.com/Tilhium/dap_test.git   # ilk kez; sonra: git pull
    cd dap_test
@@ -26,7 +32,7 @@ Bir gereksinimden uygulama üretilir ve master uygulamayı kendisi test eder.
    .venv\Scripts\activate            # macOS/Linux: source .venv/bin/activate
    pip install -r requirements.txt
    ```
-4. **Ayar dosyası:** Okan herkese kendi `.env.for-<ad>` dosyasını **özelden**
+5. **Ayar dosyası:** Okan herkese kendi `.env.for-<ad>` dosyasını **özelden**
    gönderir. Dosya repo köküne `.env` adıyla kaydedilir. İçinde ekip token'ı var:
    gruba yazılmaz, commit'lenmez.
 
@@ -72,15 +78,12 @@ bilgisayarın 9000 portuna gönderir.
 4. Sonunda master uygulamayı test eder. Sonuç **Master check** tablosunda
    görünür.
 
-## 6. Üretilen uygulamayı açmak (Baran'ın bilgisayarında)
+## 6. Üretilen uygulamayı açmak
 
-```bash
-cd workspace/<project_id>
-pip install -r requirements.txt
-uvicorn backend.main:app --port 8100
-```
-
-Tarayıcıda `http://localhost:8100` açılır. 8000 master'ındır, bu yüzden 8100.
+Proje sayfasında (ya da ana sayfadaki **Open latest app** ile) **▶ Open the app** düğmesine
+basın. Master uygulamayı kendi bilgisayarında **8100** portunda başlatır ve yeni sekmede
+`http://<Baran'ın IP'si>:8100` açılır; herkes kendi tarayıcısından kullanabilir. Aynı anda tek
+uygulama açık olur: başka bir projenin düğmesine basılınca önceki kapanır.
 
 ## Sorun olursa
 

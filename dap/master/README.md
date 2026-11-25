@@ -25,8 +25,11 @@ Owner: Baran. Settings come from `.env` through `config.py`.
   tries its routes (list, create, get, update, delete per record); the result is
   `workspace/<project_id>/acceptance.json` (read it with `GET /files/acceptance.json`).
   An application that does not start fails the project.
+- "Open the app": `POST /projects/{id}/preview` runs that project's application on
+  `PREVIEW_PORT` (default 8100) of the master PC (`core/preview.py`, one at a time);
+  the UI opens `http://<master>:8100/` in a new tab.
 - `cli.py`: `python -m dap.master.cli agents` / `project <file or text>`;
   needs `MASTER_URL` in `.env`.
 - Tests: `tests/test_agents.py`, `test_projects.py`, `test_decomposer.py`,
   `test_selector.py`, `test_cli.py`, `test_frontend.py`, `test_orchestrator.py`,
-  `test_acceptance.py`.
+  `test_acceptance.py`, `test_preview.py`.

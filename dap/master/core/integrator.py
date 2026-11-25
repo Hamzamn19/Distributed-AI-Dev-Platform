@@ -3,8 +3,9 @@
 Owner: Baran - Sprint 3 (contract section 12).
 
     prepare(project_id)                         copy the template, git init (first use)
-    commit_task(project_id, task, agent_id, files)
-        write the task's files, commit "<type>: <title> (by <agent_id>)"
+    commit_task(project_id, task, agent_id, files, agent=None)
+        write the task's files, commit "<type>: <title> (by <agent_id>)"; every file
+        starts with a comment saying which agent (and model) wrote it (author_line)
     commit_master_file(project_id, path, content, message)
         a file the master writes itself (acceptance.json), with its own commit
     list_files(project_id) -> list[str]         relative paths, without .git
@@ -18,11 +19,12 @@ import logging
 import shutil
 import subprocess
 import threading
+from datetime import datetime, timezone
 from pathlib import Path
 
 from dap.master.db.workspace import check_paths
 from dap.shared.enums import TaskType
-from dap.shared.schemas import GeneratedFile, Task
+from dap.shared.schemas import Agent, GeneratedFile, Task
 
 logger = logging.getLogger(__name__)
 
@@ -80,12 +82,45 @@ def _target(folder: Path, path: str) -> Path:
     return target
 
 
-def commit_task(project_id: str, task: Task, agent_id: str, files: list[GeneratedFile]) -> None:
-    """Write a completed task's files and commit them (one commit per task)."""
+# The comment syntax of each kind of file the agents write: (start, end).
+_COMMENT = {".py": ("# ", ""), ".txt": ("# ", ""), ".js": ("// ", ""), ".css": ("/* ", " */"),
+            ".html": ("<!-- ", " -->"), ".md": ("<!-- ", " -->")}
+
+
+def author_line(task: Task, agent_id: str, agent: Agent | None = None,
+                when: datetime | None = None) -> str:
+    """'Written by agent-eray (Eray-PC, model qwen2.5-coder:7b) - database task "...", <time>'."""
+    who = f"{agent_id} ({agent.name}, model {agent.model})" if agent else agent_id
+    # A title comes from the model: nothing in it may close the comment or break the line.
+    title = " ".join(task.title.split()).replace("*/", "*").replace("--", "-")
+    stamp = (when or datetime.now(timezone.utc)).strftime("%Y-%m-%d %H:%M UTC")
+    return f'Written by {who} - {task.type.value} task "{title}", {stamp}'
+
+
+def with_author(path: str, content: str, line: str) -> str:
+    """The file with the author comment as its first line (in HTML after the doctype)."""
+    suffix = Path(path).suffix.lower()
+    if suffix not in _COMMENT:
+        return content
+    start, end = _COMMENT[suffix]
+    comment = f"{start}{line}{end}\n"
+    keep_first = (suffix == ".html" and content.lstrip().lower().startswith("<!doctype")
+                  or suffix == ".py" and content.startswith("#!"))
+    if keep_first:
+        first, _, rest = content.lstrip().partition("\n")
+        return f"{first}\n{comment}{rest}"
+    return comment + content
+
+
+def commit_task(project_id: str, task: Task, agent_id: str, files: list[GeneratedFile],
+                agent: Agent | None = None) -> None:
+    """Write a completed task's files, each with its author comment, and commit them."""
     check_paths(files)
     folder = prepare(project_id)
+    line = author_line(task, agent_id, agent)
     with _lock:
-        targets = [(_target(folder, file.path), file.content) for file in files]
+        targets = [(_target(folder, file.path), with_author(file.path, file.content, line))
+                   for file in files]
         for target, content in targets:
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_text(content, encoding="utf-8", newline="\n")

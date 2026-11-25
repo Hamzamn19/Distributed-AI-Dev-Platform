@@ -93,3 +93,23 @@ def test_llm_think_and_llm_max_tokens_change_the_request(fake_model, monkeypatch
     assert fake_model.kwargs["max_tokens"] == 2000
     llm_client.chat(MESSAGES, max_tokens=50)
     assert fake_model.kwargs["max_tokens"] == 50
+
+
+def test_qwen3_on_ollama_is_told_not_to_think(fake_model, monkeypatch):
+    # 17 November: qwen3:4b on Ollama thought for minutes and cut its code short.
+    monkeypatch.delenv("LLM_THINK", raising=False)
+    monkeypatch.setenv("LLM_MODEL", "qwen3:4b")
+    messages = [{"role": "system", "content": "s"}, {"role": "user", "content": "write it"}]
+    llm_client.chat(messages)
+    assert fake_model.kwargs["messages"][-1]["content"] == "write it\n/no_think"
+    assert messages[-1]["content"] == "write it"  # the caller's list stays as it was
+    monkeypatch.setenv("LLM_THINK", "1")
+    llm_client.chat(messages)
+    assert fake_model.kwargs["messages"][-1]["content"] == "write it"
+
+
+def test_other_models_get_no_switch(fake_model, monkeypatch):
+    monkeypatch.delenv("LLM_THINK", raising=False)
+    monkeypatch.setenv("LLM_MODEL", "qwen2.5-coder:7b")
+    llm_client.chat([{"role": "user", "content": "write it"}])
+    assert fake_model.kwargs["messages"][-1]["content"] == "write it"

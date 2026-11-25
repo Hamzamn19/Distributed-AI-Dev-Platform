@@ -83,8 +83,12 @@ def upsert_agent(data: AgentRegister) -> Agent:
         if record is None:
             record = AgentModel(agent_id=data.agent_id, registered_at=now)
             session.add(record)
-        for field in ("name", "owner", "role_hint", "model", "provider", "a2a_url"):
+        for field in ("name", "owner", "role_hint", "model", "provider"):
             setattr(record, field, getattr(data, field))
+        # A registration without an A2A address (scripts/seed_agents.py) keeps the address
+        # a running worker gave; otherwise the master could no longer send it tasks.
+        if data.a2a_url or record.a2a_url is None:
+            record.a2a_url = data.a2a_url
         record.cap_coding = data.capabilities.coding
         record.cap_reasoning = data.capabilities.reasoning
         record.cap_context = data.capabilities.context

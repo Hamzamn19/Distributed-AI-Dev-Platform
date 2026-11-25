@@ -103,6 +103,16 @@ export async function getFile(id: string, path: string): Promise<string> {
   return (await send(`/projects/${id}/files/${encoded}`)).text();
 }
 
+// Stops the project's run: the unfinished tasks and the project become failed.
+export function cancelProject(id: string): Promise<Project> {
+  return request<Project>(`/projects/${id}/cancel`, { method: "POST" });
+}
+
+// Runs the project's generated application on the master; it answers on this port.
+export function startPreview(id: string): Promise<{ project_id: string; port: number }> {
+  return request(`/projects/${id}/preview`, { method: "POST" });
+}
+
 // The master's acceptance check of the generated app, once it has run (else null).
 export async function getAcceptance(id: string): Promise<AcceptanceReport | null> {
   try {

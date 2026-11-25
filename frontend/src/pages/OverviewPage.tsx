@@ -4,6 +4,7 @@ import { Link, useNavigate } from "react-router-dom";
 import { createProject, getAgents, getProjects } from "../api/client";
 import type { Agent, Project } from "../api/types";
 import Badge from "../components/Badge";
+import OpenAppButton from "../components/OpenAppButton";
 import { ActivityList, Card, Stat } from "../components/ui";
 import { useEventLog } from "../hooks/useEventLog";
 import type { Tone, Watched } from "../hooks/useEventLog";
@@ -95,6 +96,7 @@ export default function OverviewPage() {
   const online = agents.filter((a) => a.status !== "offline").length;
   const working = agents.filter((a) => a.status === "busy").length;
   const completed = projects.filter((p) => p.status === "completed").length;
+  const latestDone = projects.find((p) => p.status === "completed"); // newest first
   const failed = projects.filter((p) => p.status === "failed").length;
 
   return (
@@ -166,7 +168,16 @@ export default function OverviewPage() {
           </form>
         </Card>
 
-        <Card title="Projects" description="Open a project to plan it, run it and see the result." className="lg:col-span-3">
+        <Card
+          title="Projects"
+          description={
+            latestDone
+              ? `Open a project to plan it, run it and see the result. Latest app: "${latestDone.name}".`
+              : "Open a project to plan it, run it and see the result."
+          }
+          right={latestDone && <OpenAppButton projectId={latestDone.id} label="Open latest app" primary />}
+          className="lg:col-span-3"
+        >
           {loading ? (
             <p className="text-sm text-muted">Loading...</p>
           ) : projects.length === 0 ? (

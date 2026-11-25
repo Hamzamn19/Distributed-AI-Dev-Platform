@@ -140,7 +140,9 @@ def test_dependencies_decide_the_order_and_files_are_passed_on(db):
     assert set(statuses(pid).values()) == {TaskStatus.COMPLETED}
     assert repositories.get_project(pid).status == ProjectStatus.COMPLETED
     assert len(results.list_project_results(pid)) == 4
-    assert integrator.read_file(pid, "frontend/index.html") == "frontend by http://a1:9000\n"
+    page = integrator.read_file(pid, "frontend/index.html")
+    assert page.startswith('<!-- Written by a1 (a1, model m) - frontend task "frontend task", ')
+    assert page.endswith(" -->\nfrontend by http://a1:9000\n")
     log = git_log(pid)
     assert len(log) == 4
     assert log[-1] == "database: database task (by a1)"
@@ -289,7 +291,7 @@ def test_integrator_without_git_still_writes_the_files(db, monkeypatch, caplog):
     monkeypatch.setattr(integrator.shutil, "which", lambda name: None)
     integrator.commit_task("p-2", _task(), "a1", [GeneratedFile(path="backend/database.py",
                                                                content="x")])
-    assert integrator.read_file("p-2", "backend/database.py") == "x"
+    assert integrator.read_file("p-2", "backend/database.py").endswith(" UTC\nx")
     assert not (integrator.project_dir("p-2") / ".git").exists()
     assert "git is not installed" in caplog.text
 
@@ -316,7 +318,8 @@ def test_run_results_and_files_endpoints(db, monkeypatch):
     assert "backend/main.py" in files and not any(f.startswith(".git") for f in files)
     content = client.get(f"/api/v1/projects/{pid}/files/backend/main.py")
     assert content.status_code == 200
-    assert content.text == "backend by http://a2:9000\n"
+    assert content.text.startswith("# Written by a2 (a2, model m) - backend task")
+    assert content.text.endswith("\nbackend by http://a2:9000\n")
     assert client.get(f"/api/v1/projects/{pid}/files/..%2F..%2Frun.db").status_code == 404
     assert client.get(f"/api/v1/projects/{pid}/files/.git/config").status_code == 404
     assert client.get(f"/api/v1/projects/{pid}/files/missing.py").status_code == 404
@@ -369,3 +372,32 @@ def test_sequential_mode_still_waits_for_the_frontend(db, monkeypatch):
     assert "testing" not in sent_types
     assert status == ProjectStatus.FAILED
     assert statuses(pid)["testing"] == TaskStatus.FAILED
+def test_cancel_stops_a_running_project_and_run_again_finishes_it(db):
+    agent("a1"), agent("a2")
+    pid, _ = project(*APP)
+    orchestrator._running.add(pid)  # as start_run does, without its thread
+    try:
+        threading.Timer(0.3, orchestrator.cancel, args=(pid,)).start()
+        final = orchestrator.run_project(pid, client=FakeA2A(never=("database",)),
+                                         poll_interval=0.05, task_timeout=60)
+    finally:
+        orchestrator._running.discard(pid)
+        orchestrator._cancelled.discard(pid)
+    assert final == ProjectStatus.FAILED
+    assert set(statuses(pid).values()) == {TaskStatus.FAILED}
+    assert {r.error for r in results.list_project_results(pid)} == {orchestrator.CANCELLED}
+    assert orchestrator.run_project(pid, client=FakeA2A(), poll_interval=0) == ProjectStatus.COMPLETED
+
+
+def test_cancel_closes_a_run_the_master_lost_and_refuses_an_idle_project(db):
+    agent("a1")
+    pid, ids = project(("db", TaskType.DATABASE, [], "a1"))
+    assert orchestrator.cancel(pid) is False  # never ran: nothing to stop
+    repositories.set_task_status(ids["db"], TaskStatus.IN_PROGRESS)
+    repositories.set_project_status(pid, ProjectStatus.IN_PROGRESS)
+    assert orchestrator.cancel(pid) is True
+    assert statuses(pid) == {"database": TaskStatus.FAILED}
+    assert repositories.get_project(pid).status == ProjectStatus.FAILED
+    client = TestClient(app)
+    assert client.post(f"/api/v1/projects/{pid}/cancel").status_code == 409
+    assert client.post("/api/v1/projects/nope/cancel").status_code == 404

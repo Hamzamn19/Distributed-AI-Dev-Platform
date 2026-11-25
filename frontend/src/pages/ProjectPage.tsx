@@ -4,6 +4,7 @@ import { ACCEPTANCE_FILE } from "../api/acceptance";
 import type { AcceptanceReport } from "../api/acceptance";
 import {
   assignProject,
+  cancelProject,
   decomposeProject,
   getAcceptance,
   getAgents,
@@ -17,6 +18,7 @@ import type { Project, Task, TaskResult } from "../api/types";
 import AcceptanceMatrix from "../components/AcceptanceMatrix";
 import Badge from "../components/Badge";
 import FileExplorer from "../components/FileExplorer";
+import OpenAppButton from "../components/OpenAppButton";
 import Pipeline from "../components/Pipeline";
 import Timeline from "../components/Timeline";
 import TypeBadge from "../components/TypeBadge";
@@ -64,7 +66,8 @@ function nextStep(project: Project, tasks: Task[], acceptance: AcceptanceReport 
     return step(
       "ok",
       "Done",
-      acceptance ? `All tasks are completed. Master check: ${acceptance.summary}. The files are below.` : "All tasks are completed. The files are below.",
+      (acceptance ? `All tasks are completed. Master check: ${acceptance.summary}. ` : "All tasks are completed. ")
+        + 'Press "Open the app" to use the generated application; the files are below.',
     );
   if (project.status === "failed" || failedTask)
     return step("bad", "Something failed", failedTask ? `The ${failedTask.type} task failed; open its report below. You can run the project again.` : "Open the task reports below, then run again.", "run", "Run again");
@@ -75,6 +78,7 @@ export default function ProjectPage() {
   const { id = "" } = useParams();
   const now = useNow();
   const [busy, setBusy] = useState<Action | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
 
   const load = useCallback(async () => {
@@ -127,6 +131,20 @@ export default function ProjectPage() {
     }
   }
 
+  async function cancelRun() {
+    if (!window.confirm("Stop this project? Its unfinished tasks will fail; \"Run again\" continues later.")) return;
+    setCancelling(true);
+    setActionError(null);
+    try {
+      await cancelProject(id);
+      await refresh();
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCancelling(false);
+    }
+  }
+
   if (loading) return <p className="text-sm text-muted">Loading the project...</p>;
   if (!data) {
     return (
@@ -143,6 +161,8 @@ export default function ProjectPage() {
   const hasTasks = tasks.length > 0;
   const hasAssignments = tasks.some((t) => t.assigned_agent_id);
   const running = tasks.some((t) => t.status === "in_progress") || ["decomposing", "integrating"].includes(project.status);
+  // A run can be stopped while tasks run or wait to be sent (not while decomposing).
+  const stoppable = tasks.some((t) => t.status === "in_progress") || ["in_progress", "integrating"].includes(project.status);
   const next = nextStep(project, tasks, acceptance);
   const results = [...latest.values()];
   const totalTokens = results.reduce((sum, r) => sum + r.tokens_used, 0);
@@ -151,6 +171,8 @@ export default function ProjectPage() {
   const elapsed = (settled ? new Date(project.updated_at).getTime() : now) - new Date(project.created_at).getTime();
   const done = tasks.filter((t) => t.status === "completed").length;
   const tried = acceptance ? acceptance.passed + acceptance.failed : 0;
+  // The template's main.py is there from the start; the app exists once the backend task wrote it.
+  const hasApp = tasks.some((t) => t.type === "backend" && t.status === "completed");
   const labels: Record<Action, string> = { decompose: "Decompose", assign: "Assign agents", run: "Run on agents" };
   const allowed: Record<Action, boolean> = { decompose: true, assign: hasTasks, run: hasAssignments };
 
@@ -165,7 +187,10 @@ export default function ProjectPage() {
             <h1 className="truncate text-2xl font-semibold text-ink">{project.name}</h1>
             <p className="text-sm text-muted">Created {stamp(project.created_at)}</p>
           </div>
-          <Badge value={project.status} large />
+          <div className="flex flex-wrap items-start gap-3">
+            {hasApp && <OpenAppButton projectId={project.id} primary={project.status === "completed"} />}
+            <Badge value={project.status} large />
+          </div>
         </div>
       </div>
 
@@ -181,6 +206,11 @@ export default function ProjectPage() {
           {next.action && (
             <button onClick={() => act(next.action!)} disabled={busy !== null || running} className="btn btn-primary">
               {busy === next.action ? "Working..." : next.button}
+            </button>
+          )}
+          {stoppable && (
+            <button onClick={cancelRun} disabled={cancelling} className="btn btn-danger" title="Stops the run; unfinished tasks fail">
+              {cancelling ? "Stopping..." : "■ Cancel run"}
             </button>
           )}
           <details className="relative">

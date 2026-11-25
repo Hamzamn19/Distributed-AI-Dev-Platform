@@ -19,6 +19,7 @@ class MasterSettings:
     task_timeout_sec: int
     a2a_poll_interval_sec: float
     run_mode: str  # "sequential" (default) or "parallel"
+    preview_port: int  # where "Open the app" runs a generated application
 
 
 def get_settings() -> MasterSettings:
@@ -36,4 +37,5 @@ def get_settings() -> MasterSettings:
         # depends on the backend only (the generated tests hit the API, not the UI),
         # so frontend and testing run at the same time on different agents.
         run_mode=os.getenv("RUN_MODE", "sequential").strip().lower(),
+        preview_port=int(os.getenv("PREVIEW_PORT", "8100")),
     )
