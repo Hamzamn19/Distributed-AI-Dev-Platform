@@ -46,10 +46,14 @@ GUIDE: dict[TaskType, str] = {
     ),
     TaskType.FRONTEND: (
         "Write a clear, modern one-page interface in plain HTML and JavaScript (no build "
-        "step, no framework): a dashboard with counts, then one section per record type "
-        "with a search box, a table with Edit and Delete buttons, and a form to add and "
+        "step, no framework), on the template's layout: a sidebar with the sections, a "
+        "page head, a dashboard with the counts (the most important metric first with "
+        "class=\"stat wide\"), then one panel per record type with its search box beside "
+        "its title, a table with Edit and Delete buttons, and a form to add and "
         "edit, plus buttons for the actions of the requirement. Use the ready CSS classes "
-        "and the helpers of lib.js; wire every search box with wireSearch(...) so it calls "
+        "and the helpers of lib.js (renderTable colors status badges on its own and "
+        "showSkeleton shimmers while the first load runs); wire every search box with "
+        "wireSearch(...) so it calls "
         "the list route with ?search=...; call only the /api routes of backend/main.py."
     ),
     TaskType.TESTING: (

@@ -11,21 +11,27 @@
   Visual style: the frontend task's description names one of the five themes of
   style.css (modern, midnight, warm, forest, mono). Keep that theme on the
   <html> tag (data-theme="...", modern when the description names none) and shape
-  the page for its mood; style.css does the rest. Do not write your own colors.
+  the page for its mood; style.css does the colors. Do not write your own colors.
 
-  Rules for the HTML (<things> is a record name of the requirement, in plural):
-  - Keep the <head>, the header with id="nav" (one <a href="#section-..."> per section),
-    <p id="message">, the lib.js script line and the last <script> block.
-  - First section: id="dashboard", class="stats" with one card per record type
-    (<div class="card stat"><span id="stat-<things>">0</span><small><Things></small></div>).
+  Rules for the layout (keep the shell structure of this file):
+  - <aside class="sidebar"> with the brand (the application name) and <nav id="nav">
+    with one <a href="#section-..."> per section (the lib.js scrollspy marks the
+    active link); <div class="sidebar-foot"> may hold a small footer line.
+  - <header class="pagehead">: <h1> with the application name, <p class="subtitle">
+    with one line about what the app does, and .page-actions for global buttons.
+  - <p id="message"> is a floating toast (do not move or restyle it).
+  - First: <div class="stats"> with one <div class="card stat"> per important count
+    of the requirement (<span id="stat-<things>">0</span><small><Things></small>);
+    the single most important metric first with class="stat wide".
   - Then one <section class="panel" id="section-<things>"> per record type, each with:
-      <h2>, a search box <input id="search-<things>" type="search" placeholder="Search...">,
-      a form id="form-<things>" (class="form-grid") whose inputs have name= the API field
-      names, the right type (text, number, date, email, select, textarea, checkbox) and
-      required where needed, a hidden <input name="id"> for editing, a submit button and a
-      <button type="button" class="secondary" data-reset>Cancel</button>,
+      <div class="panel-head"> with <h2> and the search box
+        <input id="search-<things>" type="search" placeholder="Search...">;
+      the form id="form-<things>" (class="form-grid card-inset") whose inputs have
+        name= the API field names, the right type (text, number, date, email, select,
+        textarea, checkbox) and required where needed, a hidden <input name="id"> for
+        editing, a submit button and a <button type="button" class="secondary"
+        data-reset>Cancel</button>;
       and an empty <div id="list-<things>"></div> for the table.
-  - Use the ready CSS classes: card, panel, stats, stat, form-grid, badge, secondary, danger.
   - Interface text in English; the page title and <h1> name the application.
 
   Rules for the JavaScript (in the last <script> block):
@@ -37,8 +43,12 @@
          { key: "status", label: "Status", format: (v) => `<span class="badge">${escapeHtml(v)}</span>` }],
         [{ label: "Edit", kind: "secondary", run: (row) => fillForm(form, row) },
          { label: "Delete", kind: "danger", run: (row) => remove(row.id) }])
+        (number columns get class "num" on the header for right alignment; status
+        badges are colored by their text automatically)
+      showSkeleton("list-<things>")   a shimmer while the first load runs; call it
+        before the first api() call of each list, and hide it by rendering the table
       formData(form) -> object of the named inputs (numbers as numbers, no "id")
-      fillForm(form, record), escapeHtml(value), debounce(run, 300)
+      fillForm(form, record), escapeHtml(value), debounce(run, ms)
       wireSearch("search-<things>", "/api/<things>", (rows) => renderTable(...))  — the
       search box calls the list route with ?search=...; use it instead of your own
       listener, so the search always filters the table
@@ -60,14 +70,24 @@
   <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <header class="topbar">
-    <h1>Generated application</h1>
-    <nav id="nav"></nav>
-  </header>
-  <main>
-    <p id="message" role="status"></p>
-    <!-- the dashboard section, then one section per record type -->
-  </main>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">Generated application</div>
+      <nav id="nav"></nav>
+      <div class="sidebar-foot"></div>
+    </aside>
+    <div class="content">
+      <header class="pagehead">
+        <div>
+          <h1>Generated application</h1>
+          <p class="subtitle">one line about what the application does</p>
+        </div>
+        <div class="page-actions"></div>
+      </header>
+      <p id="message" role="status"></p>
+      <!-- the stats, then one section per record type -->
+    </div>
+  </div>
   <script src="lib.js"></script>
   <script>
     // load functions, form handlers and row actions, then the first load
