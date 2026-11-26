@@ -136,9 +136,35 @@ const scrollspy = new IntersectionObserver((entries) => {
       link.classList.toggle("active", link.getAttribute("href") === `#${entry.target.id}`));
   }
 }, { rootMargin: "-20% 0px -70% 0px" });
-document.addEventListener("DOMContentLoaded", () => {
-  document.querySelectorAll("main section[id], .content section[id]").forEach((section) => scrollspy.observe(section));
-});
+
+// The sidebar behaves like page navigation: one panel on screen at a time, the
+// Dashboard link shows the stats. A section link #section-... switches to it; the
+// section named in the URL hash is shown on load.
+function setupSectionNav() {
+  const nav = document.getElementById("nav");
+  if (!nav) return;  // an older page without a sidebar: everything stays on one page
+  const sections = [...document.querySelectorAll("[id^='section-']")];
+  const stats = document.querySelector(".stats");
+  const show = (id) => {
+    sections.forEach((s) => { s.style.display = s.id === id ? "" : "none"; });
+    if (stats) stats.style.display = id === "dashboard" ? "" : "none";
+    document.querySelectorAll("#nav a").forEach((link) =>
+      link.classList.toggle("active", link.getAttribute("href") === `#${id}`));
+    window.scrollTo({ top: 0 });
+  };
+  nav.addEventListener("click", (event) => {
+    const link = event.target.closest("a[href^='#']");
+    if (!link) return;
+    event.preventDefault();
+    const id = link.getAttribute("href").slice(1);
+    history.replaceState(null, "", `#${id}`);
+    show(id);
+  });
+  document.querySelectorAll(".content section[id]").forEach((section) => scrollspy.observe(section));
+  const initial = location.hash.slice(1);
+  show(initial || "dashboard");
+}
+document.addEventListener("DOMContentLoaded", setupSectionNav);
 
 document.addEventListener("click", (event) => {
   if (event.target.matches("[data-reset]")) event.target.form?.reset();

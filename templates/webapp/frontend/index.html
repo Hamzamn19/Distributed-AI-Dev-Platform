@@ -15,8 +15,10 @@
 
   Rules for the layout (keep the shell structure of this file):
   - <aside class="sidebar"> with the brand (the application name) and <nav id="nav">
-    with one <a href="#section-..."> per section (the lib.js scrollspy marks the
-    active link); <div class="sidebar-foot"> may hold a small footer line.
+    with a Dashboard link first (<a href="#dashboard">Dashboard</a>) then one
+    <a href="#section-..."> per section. The sidebar switches sections like pages:
+    the lib.js shows one panel at a time and marks the active link; do not write
+    your own switching code.
   - <header class="pagehead">: <h1> with the application name, <p class="subtitle">
     with one line about what the app does, and .page-actions for global buttons.
   - <p id="message"> is a floating toast (do not move or restyle it).
