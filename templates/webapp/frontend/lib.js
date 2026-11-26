@@ -164,7 +164,13 @@ function setupSectionNav() {
   const initial = location.hash.slice(1);
   show(initial || "dashboard");
 }
-document.addEventListener("DOMContentLoaded", setupSectionNav);
+// lib.js is loaded after the shell markup, so the sections exist: initialize at once,
+// and again on DOMContentLoaded for pages that load it earlier.
+if (document.readyState === "loading") {
+  document.addEventListener("DOMContentLoaded", setupSectionNav);
+} else {
+  setupSectionNav();
+}
 
 document.addEventListener("click", (event) => {
   if (event.target.matches("[data-reset]")) event.target.form?.reset();
