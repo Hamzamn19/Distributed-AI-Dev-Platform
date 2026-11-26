@@ -87,6 +87,12 @@ worker.
 4. Reproduce the numbers: `pytest` → 303 passed; the runs are in the master
    database / git history (`workspace/`).
 
+**Verification (26 November, before this review):** all 18 commit hashes cited
+in this report were re-checked against `main` (subjects and timestamps match);
+`main == origin/main`; the full suite re-run → **303 passed**; the warehouse
+run re-confirmed from its acceptance file (57/57, `data-theme="midnight"`, 5
+tables); CI green on the report commit itself (GitHub Actions run 45755691586).
+
 ## Metrics
 
 | Measure | Sprint 3 end | Sprint 4 end |
