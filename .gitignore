@@ -48,3 +48,12 @@ local-stack/open-webui/app/
 local-stack/open-webui/data/
 *.gguf
 *.ggml
+
+# ---- Personal experiments: stay on this disk, never commit -------------------
+# The whole local experiment stack and its notes, plus the personal assistant
+# workspace (plans, ADR drafts). Ignored wholesale so no 'git add -A' can ever
+# pick them up (that happened once, commit f5069bf, and had to be cleaned).
+local-stack/
+docs/local-stack/
+docs/superpowers/
+docs/adr/
