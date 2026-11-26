@@ -132,3 +132,8 @@ remaining owners are the open item, tracked on the board.**
 The Sprint 2 proposal (one repeatable integrated checkpoint before a card is
 declared complete) was effectively applied this sprint through the test day and
 the adoption review. Formal retrospective decision: **pending team confirmation.**
+
+The team's decisions and working rules of this sprint are now recorded in one
+place: [the decisions log](../../decisions-log.md) (distilled from the team
+group on 26 November) — including the 2026-11-18 architecture vote with its
+exact context, and the 2026-11-18 adoption procedure.

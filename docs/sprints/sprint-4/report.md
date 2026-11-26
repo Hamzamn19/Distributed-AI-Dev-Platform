@@ -136,3 +136,7 @@ tables); CI green on the report commit itself (GitHub Actions run 45755691586).
   and ready to build.
 - **SSE streaming** end-to-end (character-level instead of ~2 s polling).
 - **Multi-PC run** with the whole team Monday; adoption commits; Trello sync.
+
+The team's dated decisions, standing rules and the exact context of the
+2026-11-18 architecture vote are recorded in [the decisions log](../../decisions-log.md);
+the sprint's meetings and stand-ups in [meetings.md](meetings.md).
