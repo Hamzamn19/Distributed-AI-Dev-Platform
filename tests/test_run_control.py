@@ -385,7 +385,13 @@ def test_a_run_with_only_busy_agents_is_queued_and_starts_when_one_is_free(db, m
     assert "run_queued" in events and "run_started_from_queue" in events
 
 
-def test_a_run_without_any_registered_agent_starts_at_once(db):
+def test_a_run_without_any_registered_agent_starts_at_once(db, monkeypatch):
+    from dap.master import a2a_client
+    monkeypatch.setattr(
+        a2a_client,
+        "send_task",
+        lambda *args, **kwargs: (_ for _ in ()).throw(a2a_client.A2AError("unreachable")),
+    )
     pid = make_project()
     client = TestClient(app)
     answer = client.post(f"/api/v1/projects/{pid}/run")
